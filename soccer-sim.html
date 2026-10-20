@@ -61,9 +61,9 @@ table.stats td:first-child{text-align:left;color:var(--text2)}
 .tag.bad{background:rgba(255,107,107,.15);color:var(--bad)}
 .json-box{background:#0c1018;border:1px solid var(--border);border-radius:8px;padding:8px;height:120px;overflow:auto;font-size:10px;font-family:ui-monospace,Menlo,monospace;color:#7fd1a8;white-space:pre}
 .timeline{position:relative;height:28px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin:10px 0;cursor:pointer;overflow:hidden}
-.timeline .marker{position:absolute;top:4px;width:3px;height:20px;background:var(--warn);border-radius:2px}
-.timeline .marker.goal{background:var(--good);width:5px;height:24px;top:2px}
-.timeline .progress{position:absolute;left:0;top:0;bottom:0;background:rgba(91,157,255,.15);border-right:2px solid var(--accent)}
+.timeline .marker{position:absolute;top:6px;width:2px;height:16px;background:rgba(255,179,71,.55);border-radius:2px}
+.timeline .marker.goal{background:var(--good);width:4px;height:22px;top:3px}
+.timeline .progress{position:absolute;left:0;top:0;bottom:0;background:rgba(91,157,255,.18);border-right:3px solid var(--accent);z-index:2}
 details{margin-top:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
 details summary{cursor:pointer;font-weight:700;font-size:12.5px;color:var(--accent)}
 details .body{margin-top:8px;color:var(--text2);font-size:12px}
@@ -264,7 +264,7 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
 <script>
 /* ENGINE - pure logic, produces the log object */
 const FIELD_W = 105, FIELD_H = 68, GOAL_W = 14.64;
-const TICK_DT = 0.1, MATCH_SECONDS = 5400, RECORD_EVERY = 2;
+const TICK_DT = 1.0, MATCH_SECONDS = 5400, RECORD_EVERY = 1, DECIDE_EVERY = 2;
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
@@ -360,7 +360,8 @@ function makePlayer(id, team, slot, rng, aggro, tac, override){
       tackle: (slot.role==='DF'?1.3:slot.role==='MF'?0.95:0.7)*(tac.tackle||1),
       position: 1.0
     },
-    action: 'idle'
+    action: 'idle',
+    targetX: null, targetY: null
   };
 }
 
@@ -416,11 +417,19 @@ function createMatch(opts){
 }
 
 function recordFrame(state){
-  state.log.frames.push([
-    r1(state.time), r2(state.ball.x), r2(state.ball.y),
-    state.ball.owner==null?-1:state.ball.owner,
-    state.players.map(p=>[r2(p.x), r2(p.y)])
-  ]);
+  const players = state.players;
+  const n = players.length;
+  // flat record: [t, ballX, ballY, owner, x0,y0, x1,y1, ...] — no nested allocs
+  const rec = new Array(4 + n*2);
+  rec[0] = state.time;
+  rec[1] = state.ball.x;
+  rec[2] = state.ball.y;
+  rec[3] = state.ball.owner==null?-1:state.ball.owner;
+  for (let i=0;i<n;i++){
+    rec[4+i*2] = players[i].x;
+    rec[5+i*2] = players[i].y;
+  }
+  state.log.frames.push(rec);
 }
 
 function pushEvent(state, type, data){
@@ -429,138 +438,217 @@ function pushEvent(state, type, data){
   state.log.events.push(ev);
 }
 
-function goalTarget(team){ return { x: team===0?FIELD_W:0, y:FIELD_H/2 }; }
+// scratch objects — avoid per-call allocation in hot paths
+const _g0 = { x: FIELD_W, y: FIELD_H/2 };
+const _g1 = { x: 0, y: FIELD_H/2 };
+function goalTarget(team){ return team===0 ? _g0 : _g1; }
+
+function dist2(ax,ay,bx,by){
+  const dx=ax-bx, dy=ay-by;
+  return dx*dx+dy*dy;
+}
 
 function pressureOn(state,p){
-  let pr=0;
-  for (const o of state.players){
-    if (o.team===p.team) continue;
-    const d=dist(o,p);
-    if (d<12) pr+=(12-d)/12;
+  const players = state.players;
+  const n = players.length;
+  const px = p.x, py = p.y, team = p.team;
+  let pr = 0;
+  for (let i=0;i<n;i++){
+    const o = players[i];
+    if (o.team===team) continue;
+    const dx=o.x-px, dy=o.y-py;
+    const d2=dx*dx+dy*dy;
+    if (d2<144){
+      pr += (12 - Math.sqrt(d2)) * 0.0833333;
+    }
   }
-  return clamp(pr,0,2);
+  return pr>2?2:pr;
 }
-const openness = (state,p)=>clamp(1-pressureOn(state,p)/2,0,1);
+const openness = (state,p)=>{
+  const pr = pressureOn(state,p);
+  const v = 1 - pr*0.5;
+  return v<0?0:v>1?1:v;
+};
 
 function scoreShoot(state,p){
-  const g=goalTarget(p.team), d=dist(p,g);
-  if (d>34) return -1; // too far to shoot
-  const angle=1-Math.abs(p.y-g.y)/(FIELD_H/2);
+  const g=goalTarget(p.team);
+  const dx=p.x-g.x, dy=p.y-g.y;
+  const d=Math.sqrt(dx*dx+dy*dy);
+  if (d>34) return -1;
+  const angle=1-Math.abs(p.y-g.y)*0.0147059;
   const pressure=pressureOn(state,p);
-  const skill=p.attrs.shooting/100;
-  const urgency = (state.time>4300 && state.score[p.team]<=state.score[1-p.team]) ? 0.15 : 0;
-  // steep falloff with distance — only close-range shots compete with pass/dribble
-  return (util.inverse(d,28)*0.70*angle + skill*0.18 + util.inverse(pressure,1.5)*0.12 + urgency) * p.w.shoot * 0.72;
+  const skill=p.attrs.shooting*0.01;
+  const urgency=(state.time>4300&&state.score[p.team]<=state.score[1-p.team])?0.15:0;
+  return ((1-d*0.0357143)*0.70*angle + skill*0.18 + (1-pressure*0.6666667)*0.12 + urgency) * p.w.shoot * 0.72;
 }
 
 function scorePass(state,p,mate){
-  const g=goalTarget(p.team), d=dist(p,mate);
-  if (d<2||d>45) return -1;
+  const abx=mate.x-p.x, aby=mate.y-p.y;
+  const d2=abx*abx+aby*aby;
+  if (d2<4||d2>2025) return -1;
+  const d=Math.sqrt(d2);
   const open=openness(state,mate);
-  const forward=(mate.x-p.x)*(p.team===0?1:-1);
-  const progress=clamp(forward/30,-1,1)*0.5+0.5;
-  const toGoal=util.inverse(dist(mate,g),80);
-  let laneRisk=0;
-  for (const o of state.players){
+  const forward=abx*(p.team===0?1:-1);
+  const progress=clamp(forward*0.0333333,-1,1)*0.5+0.5;
+  const g=goalTarget(p.team);
+  const gdx=mate.x-g.x, gdy=mate.y-g.y;
+  const toGoal=1-Math.sqrt(gdx*gdx+gdy*gdy)*0.0125;
+  let laneRisk=0, checked=0;
+  const players=state.players, n=players.length;
+  for (let i=0;i<n&&checked<4;i++){
+    const o=players[i];
     if (o.team===p.team) continue;
-    const abx=mate.x-p.x, aby=mate.y-p.y, len2=abx*abx+aby*aby;
-    if (len2<0.001) continue;
-    const t=((o.x-p.x)*abx+(o.y-p.y)*aby)/len2;
+    const t=((o.x-p.x)*abx+(o.y-p.y)*aby)/d2;
     if (t>0.1&&t<0.9){
-      const px=lerp(p.x,mate.x,t), py=lerp(p.y,mate.y,t);
-      const od=Math.hypot(o.x-px,o.y-py);
-      if (od<4) laneRisk+=(4-od)/4;
+      const px=p.x+abx*t, py=p.y+aby*t;
+      const odx=o.x-px, ody=o.y-py;
+      const od2=odx*odx+ody*ody;
+      if (od2<16){ laneRisk+=(4-Math.sqrt(od2))*0.25; checked++; }
     }
   }
-  laneRisk=clamp(laneRisk,0,1);
-  return (open*0.40 + progress*0.25 + toGoal*0.20 + (p.attrs.passing/100)*0.10
-    - laneRisk*0.35 - util.linear(d,50)*0.15) * p.w.pass;
+  if (laneRisk>1) laneRisk=1;
+  return (open*0.40 + progress*0.25 + toGoal*0.20 + p.attrs.passing*0.001
+    - laneRisk*0.35 - Math.min(1,d*0.02)*0.15) * p.w.pass;
 }
 
 function scoreDribble(state,p){
-  const g=goalTarget(p.team), d=dist(p,g);
-  const space=1-pressureOn(state,p)/2;
-  return (util.inverse(d,70)*0.40 + space*0.35 + (p.attrs.dribbling/100)*0.25) * p.w.dribble;
+  const g=goalTarget(p.team);
+  const dx=p.x-g.x, dy=p.y-g.y;
+  const d=Math.sqrt(dx*dx+dy*dy);
+  const space=1-pressureOn(state,p)*0.5;
+  return ((1-d*0.0142857)*0.40 + (space<0?0:space)*0.35 + p.attrs.dribbling*0.0025) * p.w.dribble;
 }
 const scoreHold = (state,p)=>(1-util.linear(pressureOn(state,p),1.2))*0.55*p.w.position;
 
 function decideBallCarrier(state,p,rng){
   const options=[{ action:'shoot', score:scoreShoot(state,p), target:goalTarget(p.team) }];
-  for (const m of state.players){
+  const players=state.players, n=players.length;
+  // consider at most 5 closest teammates
+  let best1=-1,best1d=1e9, best2=-1,best2d=1e9, best3=-1,best3d=1e9, best4=-1,best4d=1e9, best5=-1,best5d=1e9;
+  for (let i=0;i<n;i++){
+    const m=players[i];
     if (m.team!==p.team||m.id===p.id) continue;
+    const dx=m.x-p.x, dy=m.y-p.y, d2=dx*dx+dy*dy;
+    if (d2<best1d){ best5=best4;best5d=best4d; best4=best3;best4d=best3d; best3=best2;best3d=best2d; best2=best1;best2d=best1d; best1=i;best1d=d2; }
+    else if (d2<best2d){ best5=best4;best5d=best4d; best4=best3;best4d=best3d; best3=best2;best3d=best2d; best2=i;best2d=d2; }
+    else if (d2<best3d){ best5=best4;best5d=best4d; best4=best3;best4d=best3d; best3=i;best3d=d2; }
+    else if (d2<best4d){ best5=best4;best5d=best4d; best4=i;best4d=d2; }
+    else if (d2<best5d){ best5=i;best5d=d2; }
+  }
+  const cand=[best1,best2,best3,best4,best5];
+  for (let c=0;c<5;c++){
+    const idx=cand[c];
+    if (idx<0) continue;
+    const m=players[idx];
     const s=scorePass(state,p,m);
-    if (s>0) options.push({ action:'pass', score:s, mate:m.id, target:{x:m.x,y:m.y} });
+    if (s>0) options.push({ action:'pass', score:s, mate:m.id, target:null });
   }
   options.push({ action:'dribble', score:scoreDribble(state,p), target:goalTarget(p.team) });
-  options.push({ action:'hold', score:scoreHold(state,p), target:{x:p.x,y:p.y} });
-  options.forEach(o=>o.score+=(rng()-0.5)*0.04);
-  options.sort((a,b)=>b.score-a.score);
-  const best=options[0];
-  if (best.action==='shoot'&&best.score<0.35){
-    const alt=options.find(o=>o.action==='pass'||o.action==='dribble');
-    if (alt) return alt;
+  options.push({ action:'hold', score:scoreHold(state,p), target:null });
+  let best=0, bestS=-1;
+  for (let i=0;i<options.length;i++){
+    const s=options[i].score+(rng()-0.5)*0.04;
+    options[i].score=s;
+    if (s>bestS){ bestS=s; best=i; }
   }
-  return best;
+  const pick=options[best];
+  if (pick.action==='shoot'&&pick.score<0.35){
+    for (let i=0;i<options.length;i++){
+      if (options[i].action==='pass'||options[i].action==='dribble'){
+        if (options[i].score>0) return options[i];
+      }
+    }
+  }
+  return pick;
 }
+
+const _tgt = { x:0, y:0 };
 
 function decideOffBall(state,p,teamHasBall,rng){
   const ball=state.ball;
-  const owner = ball.owner!=null ? state.players[ball.owner] : null;
+  const players=state.players, n=players.length;
+  const px=p.x, py=p.y, team=p.team;
+
   if (!teamHasBall){
-    let closest=null, closestD=Infinity;
-    for (const m of state.players){
-      if (m.team!==p.team) continue;
-      const md=dist(m,ball);
-      if (md<closestD){ closestD=md; closest=m; }
+    // closest teammate to ball presses
+    let closest=-1, closestD=1e18;
+    for (let i=0;i<n;i++){
+      const m=players[i];
+      if (m.team!==team||m.role==='GK') continue;
+      const dx=m.x-ball.x, dy=m.y-ball.y, d2=dx*dx+dy*dy;
+      if (d2<closestD){ closestD=d2; closest=i; }
     }
-    if (closest&&closest.id===p.id&&p.role!=='GK'){
-      const target = (owner&&owner.team!==p.team) ? owner : ball;
-      return { action:'press', target:{x:target.x,y:target.y} };
+    if (closest>=0 && players[closest].id===p.id){
+      const owner = ball.owner!=null ? players[ball.owner] : ball;
+      _tgt.x=owner.x; _tgt.y=owner.y;
+      return { action:'press', target:_tgt };
     }
-    let mark=null, markD=Infinity;
-    for (const o of state.players){
-      if (o.team===p.team) continue;
-      const od=dist(p,o);
-      if (od<markD){ markD=od; mark=o; }
+    // mark nearest opponent
+    let markD=1e18, mx=0, my=0;
+    for (let i=0;i<n;i++){
+      const o=players[i];
+      if (o.team===team) continue;
+      const dx=o.x-px, dy=o.y-py, d2=dx*dx+dy*dy;
+      if (d2<markD){ markD=d2; mx=o.x; my=o.y; }
     }
-    if (mark){
-      const gx=p.team===0?0:FIELD_W;
-      return { action:'mark', target:{ x:lerp(mark.x,gx,0.25), y:mark.y } };
+    if (markD<1e18){
+      const gx=team===0?0:FIELD_W;
+      _tgt.x=mx+(gx-mx)*0.25; _tgt.y=my;
+      return { action:'mark', target:_tgt };
     }
   }
-  const slot=(state.formations&&state.formations[p.team]||getFormation('4-4-2'))[p.id%SLOT_N];
-  const fx=p.team===0?slot.x:1-slot.x;
+
+  // formation slot + ball shift
+  const form=(state.formations&&state.formations[team])||getFormation('4-4-2');
+  const slot=form[p.id%SLOT_N];
+  const fx=team===0?slot.x:1-slot.x;
   const lineH=(state.tactics&&state.tactics.line!=null)?state.tactics.line:0.12;
-  const shift=((ball.x/FIELD_W)-0.5)*(0.20+lineH);
-  let tx=clamp(fx+shift,0.03,0.97)*FIELD_W;
+  const shift=((ball.x*0.0095238)-0.5)*(0.20+lineH); // ball.x/FIELD_W
+  let tx=(fx+shift<0.03?0.03:fx+shift>0.97?0.97:fx+shift)*FIELD_W;
   let ty=slot.y*FIELD_H;
-  if (p.role!=='GK'&&owner&&owner.team===p.team){
+  if (p.role!=='GK'&&state.ball.owner!=null&&players[state.ball.owner].team===team){
     const op=openness(state,p);
-    tx += (p.team===0?12:-12)*op*(0.7+lineH*2);
-    ty += (rng()-0.5)*8*op;
-    tx=clamp(tx,2,FIELD_W-2); ty=clamp(ty,2,FIELD_H-2);
+    const adv=(team===0?12:-12)*op*(0.7+lineH*2);
+    tx+=adv;
+    ty+=(rng()-0.5)*8*op;
+    if (tx<2) tx=2; else if (tx>FIELD_W-2) tx=FIELD_W-2;
+    if (ty<2) ty=2; else if (ty>FIELD_H-2) ty=FIELD_H-2;
   }
-  return { action:'support', target:{x:tx,y:ty} };
+  _tgt.x=tx; _tgt.y=ty;
+  return { action:'support', target:_tgt };
 }
 
 function decideGK(state,p){
   const ball=state.ball;
   const gx=p.team===0?3:FIELD_W-3;
-  const ty=clamp(ball.y, FIELD_H/2-GOAL_W/2, FIELD_H/2+GOAL_W/2);
-  const tx=gx+(p.team===0?1:-1)*clamp(Math.abs(ball.x-gx)*0.08,0,6);
-  if (ball.owner==null&&dist(p,ball)<12) return { action:'press', target:{x:ball.x,y:ball.y} };
-  return { action:'position', target:{x:tx,y:ty} };
+  let ty=ball.y;
+  const lo=FIELD_H/2-GOAL_W/2, hi=FIELD_H/2+GOAL_W/2;
+  if (ty<lo) ty=lo; else if (ty>hi) ty=hi;
+  let tx=gx+(p.team===0?1:-1)*Math.min(6,Math.abs(ball.x-gx)*0.08);
+  if (ball.owner==null){
+    const dx=p.x-ball.x, dy=p.y-ball.y;
+    if (dx*dx+dy*dy<144){
+      _tgt.x=ball.x; _tgt.y=ball.y;
+      return { action:'press', target:_tgt };
+    }
+  }
+  _tgt.x=tx; _tgt.y=ty;
+  return { action:'position', target:_tgt };
 }
 
 function moveToward(p,tx,ty,dt,speedMul){
-  const speed=(2.2+(p.attrs.pace/100)*5.5)*(speedMul||1)*(0.55+p.stamina/200);
-  const dx=tx-p.x, dy=ty-p.y, d=Math.hypot(dx,dy);
+  const speed=(2.2+(p.attrs.pace*0.055))*(speedMul||1)*(0.55+p.stamina*0.005);
+  const dx=tx-p.x, dy=ty-p.y;
+  const d=Math.sqrt(dx*dx+dy*dy);
   if (d<0.15){ p.vx=0; p.vy=0; return; }
   const s=Math.min(speed,d/dt);
-  p.vx=(dx/d)*s; p.vy=(dy/d)*s;
-  p.x=clamp(p.x+p.vx*dt,0.5,FIELD_W-0.5);
-  p.y=clamp(p.y+p.vy*dt,0.5,FIELD_H-0.5);
-  p.stamina=clamp(p.stamina-(s/8)*dt*1.2,0,100);
+  const inv=1/d;
+  p.vx=dx*inv*s; p.vy=dy*inv*s;
+  p.x+=p.vx*dt; p.y+=p.vy*dt;
+  if (p.x<0.5){ p.x=0.5; } else if (p.x>FIELD_W-0.5){ p.x=FIELD_W-0.5; }
+  if (p.y<0.5){ p.y=0.5; } else if (p.y>FIELD_H-0.5){ p.y=FIELD_H-0.5; }
+  p.stamina-= (s*0.15)*dt*1.2;
+  if (p.stamina<0) p.stamina=0; else if (p.stamina>100) p.stamina=100;
 }
 
 function executeAction(state,p,decision){
@@ -587,7 +675,7 @@ function executeAction(state,p,decision){
     ball.owner=null;
     state.stats.shots[p.team]++;
     pushEvent(state,'shot',{ team:p.team, player:p.id, x:r2(p.x), y:r2(p.y), dist:r1(d) });
-  } else if (decision.action==='pass'){
+  } else if (decision.action==='pass' && decision.mate!=null && state.players[decision.mate]){
     const mate=state.players[decision.mate];
     const tx=mate.x+mate.vx*0.25, ty=mate.y+mate.vy*0.25;
     const speed=10+(p.attrs.passing/100)*12;
@@ -607,20 +695,6 @@ function executeAction(state,p,decision){
   } else {
     moveToward(p,decision.target.x,decision.target.y,TICK_DT,1);
   }
-}
-
-function tryTackle(state,p,rng){
-  const owner = state.ball.owner!=null ? state.players[state.ball.owner] : null;
-  if (!owner||owner.team===p.team) return false;
-  if (dist(p,owner)>2.2) return false;
-  const chance=clamp((p.attrs.tackling/100)*0.55-(owner.attrs.dribbling/100)*0.35+0.15,0.05,0.7);
-  if (rng()<chance*0.35){
-    state.ball.owner=p.id; state.ball.vx=state.ball.vy=0;
-    state.stats.tackles[p.team]++;
-    pushEvent(state,'tackle',{ team:p.team, player:p.id, from:owner.id, x:r2(p.x), y:r2(p.y) });
-    return true;
-  }
-  return false;
 }
 
 function updateBall(state,dt){
@@ -703,19 +777,53 @@ function resetKickoff(state,team){
 function step(state,rng){
   if (state.time>=MATCH_SECONDS) return false;
   state.time+=TICK_DT; state.tick++;
-  if (state.ball.owner!=null) state.stats.possession[state.players[state.ball.owner].team]++;
-  for (const p of state.players) p.stamina=clamp(p.stamina+0.15,0,100);
+  const owner=state.ball.owner;
+  if (owner!=null) state.stats.possession[state.players[owner].team]++;
 
-  for (const p of state.players){
-    if (state.ball.owner!=null&&state.ball.owner!==p.id) tryTackle(state,p,rng);
+  const players=state.players, n=players.length;
+  const decideNow = (state.tick%DECIDE_EVERY===0);
+
+  // tackles (cheap squared dist)
+  if (owner!=null){
+    const carrier=players[owner];
+    const cx=carrier.x, cy=carrier.y;
+    for (let i=0;i<n;i++){
+      const p=players[i];
+      if (p.id===owner) continue;
+      const dx=p.x-cx, dy=p.y-cy;
+      if (dx*dx+dy*dy>4.84) continue; // 2.2^2
+      const chance=((p.attrs.tackling*0.01)*0.55-(carrier.attrs.dribbling*0.01)*0.35+0.15);
+      const c=chance<0.05?0.05:chance>0.7?0.7:chance;
+      if (rng()<c*0.35){
+        state.ball.owner=p.id; state.ball.vx=state.ball.vy=0;
+        state.stats.tackles[p.team]++;
+        pushEvent(state,'tackle',{ team:p.team, player:p.id, from:carrier.id, x:r2(p.x), y:r2(p.y) });
+      }
+    }
   }
-  for (const p of state.players){
-    const teamHasBall = state.ball.owner!=null && state.players[state.ball.owner].team===p.team;
+
+  // decisions + movement
+  for (let i=0;i<n;i++){
+    const p=players[i];
+    p.stamina = p.stamina + 0.375 > 100 ? 100 : p.stamina + 0.375; // ~0.15 per old 0.1s tick scaled
+    const isCarrier = state.ball.owner===p.id;
     let decision;
-    if (p.role==='GK') decision=decideGK(state,p);
-    else if (state.ball.owner===p.id) decision=decideBallCarrier(state,p,rng);
-    else decision=decideOffBall(state,p,teamHasBall,rng);
+    if (isCarrier){
+      decision=decideBallCarrier(state,p,rng);
+    } else if (p.role==='GK'){
+      decision=decideGK(state,p);
+    } else if (decideNow || p.targetX==null){
+      const teamHasBall = state.ball.owner!=null && players[state.ball.owner].team===p.team;
+      decision=decideOffBall(state,p,teamHasBall,rng);
+    } else {
+      _tgt.x=p.targetX; _tgt.y=p.targetY;
+      decision={ action:'support', target:_tgt };
+    }
     executeAction(state,p,decision);
+    if (decision.target && decision.action!=='pass' && decision.action!=='shoot') {
+      p.targetX=decision.target.x;
+      p.targetY=decision.target.y;
+    }
   }
   updateBall(state,TICK_DT);
   if (state.tick%RECORD_EVERY===0) recordFrame(state);
@@ -744,6 +852,9 @@ function simulateMatch(opts){
   state.log.duration=r1(state.time);
   return state.log;
 }
+
+// JIT warmup so the first user click is already fast
+for (let _w=0;_w<2;_w++) simulateMatch({ seed:_w+1 });
 
 /* VIEWER - plays back the log object */
 const $ = s=>document.querySelector(s);
@@ -850,11 +961,12 @@ function loadLog(log){
     });
   });
 
-  // timeline markers
+  // timeline markers — goals (green) and shots (faint) only; dense events flood the bar
   const tl = $('#timeline');
   tl.querySelectorAll('.marker').forEach(m=>m.remove());
   const dur = log.duration || 5400;
   log.events.forEach(e=>{
+    if (e.type!=='goal' && e.type!=='shot') return;
     const m = document.createElement('div');
     m.className = 'marker' + (e.type==='goal'?' goal':'');
     m.style.left = (e.t/dur*100) + '%';
@@ -862,15 +974,52 @@ function loadLog(log){
     tl.appendChild(m);
   });
 
-  $('#view-state').textContent = '준비됨';
-  drawFrame();
-  // drawFrame renders the pitch at t=0 (running score 0-0) — restore the final result
-  $('#view-score').textContent = log.score[0] + ' - ' + log.score[1];
-  $('#view-clock').textContent = '최종';
-  $('#view-time').textContent = '90:00 / 90:00';
-  $('#view-progress').textContent = '100%';
-  $('#view-owner').textContent = '—';
-  $('#view-state').textContent = `완료 — 최종 ${log.score[0]} - ${log.score[1]}`;
+  resetViewerUI();
+}
+
+function resetViewerUI(){
+  if (view.raf) cancelAnimationFrame(view.raf);
+  view.raf = null;
+  view.playing = false;
+  view.frameIndex = 0;
+  view.acc = 0;
+  view.lastTs = 0;
+
+  $('#seek').value = 0;
+  $('#seek-v').textContent = '0';
+  $('#timeline-progress').style.width = '0%';
+
+  if (view.log){
+    const s = view.log.score;
+    $('#view-score').textContent = s[0] + ' - ' + s[1];
+    $('#view-clock').textContent = '최종';
+    $('#view-time').textContent = '90:00 / 90:00';
+    $('#view-progress').textContent = '0%';
+    $('#view-owner').textContent = '—';
+    $('#view-state').textContent = `완료 — 최종 ${s[0]} - ${s[1]}`;
+    // paint pitch at kickoff without touching the progress HUD
+    if (view.log.frames.length){
+      const f = view.log.frames[0];
+      drawPitch();
+      const sx = canvas.width / FIELD_W, sy = canvas.height / FIELD_H;
+      const n = (f.length - 4) >> 1;
+      for (let i=0;i<n;i++){
+        const team = i < SLOT_N ? 0 : 1;
+        const x = f[4+i*2]*sx, y = f[5+i*2]*sy;
+        ctx.beginPath();
+        ctx.arc(x, y, (i%SLOT_N)===0?11:10, 0, Math.PI*2);
+        ctx.fillStyle = team===0 ? '#3b82f6' : '#ef4444';
+        ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(String(i%SLOT_N+1), x, y+3);
+      }
+      ctx.beginPath(); ctx.arc(f[1]*sx, f[2]*sy, 5, 0, Math.PI*2);
+      ctx.fillStyle = '#fff'; ctx.fill();
+    }
+  } else {
+    drawPitchIdle();
+  }
 }
 
 function seekToTime(t){
@@ -898,25 +1047,17 @@ function drawFrame(){
     return;
   }
   const f = log.frames[view.frameIndex];
-  const t = f[0], bx = f[1], by = f[2], owner = f[3], positions = f[4];
-
-  // interpolate from previous
-  let ix = bx, iy = by;
-  if (view.frameIndex > 0){
-    const prev = log.frames[view.frameIndex-1];
-    const dt = f[0]-prev[0] || 0.2;
-    // simple: show exact frame positions (already sampled densely)
-    ix = bx; iy = by;
-  }
+  const t = f[0], bx = f[1], by = f[2], owner = f[3];
+  const n = (f.length - 4) >> 1;
 
   drawPitch();
   const sx = canvas.width / FIELD_W;
   const sy = canvas.height / FIELD_H;
 
-  // players
-  positions.forEach((pos, i)=>{
+  // players (flat coords: f[4+i*2], f[5+i*2])
+  for (let i=0;i<n;i++){
     const team = i < SLOT_N ? 0 : 1;
-    const x = pos[0]*sx, y = pos[1]*sy;
+    const x = f[4+i*2]*sx, y = f[5+i*2]*sy;
     ctx.beginPath();
     ctx.arc(x, y, (i%SLOT_N)===0?11:10, 0, Math.PI*2);
     ctx.fillStyle = team===0 ? '#3b82f6' : '#ef4444';
@@ -931,11 +1072,11 @@ function drawFrame(){
     ctx.font = 'bold 9px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(String(i%SLOT_N+1), x, y+3);
-  });
+  }
 
   // ball
   ctx.beginPath();
-  ctx.arc(ix*sx, iy*sy, 5, 0, Math.PI*2);
+  ctx.arc(bx*sx, by*sy, 5, 0, Math.PI*2);
   ctx.fillStyle = '#fff';
   ctx.fill();
   ctx.strokeStyle = '#222';
@@ -1301,9 +1442,8 @@ $('#btn-full').addEventListener('click', ()=>{
 });
 $('#btn-pause').addEventListener('click', pause);
 $('#btn-reset-view').addEventListener('click', ()=>{
-  view.frameIndex = 0;
-  drawFrame();
-  $('#view-state').textContent = view.playing ? ('재생 중 ' + view.speed + '×') : '처음으로';
+  resetViewerUI();
+  $('#view-state').textContent = '처음으로';
 });
 $('#seek').addEventListener('input', e=>{
   view.frameIndex = parseInt(e.target.value,10)||0;
