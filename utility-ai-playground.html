@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Utility AI 실험실</title>
+<style>
+:root {
+  --bg: #0f1218;
+  --bg2: #171c26;
+  --bg3: #1e2532;
+  --border: #2a3344;
+  --text: #e8edf5;
+  --text2: #9aa8bc;
+  --accent: #5b9dff;
+  --accent2: #7c6cff;
+  --good: #3ecf8e;
+  --warn: #ffb347;
+  --bad: #ff6b6b;
+  --chip: #243044;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 22px 0;
+  position: sticky; top: 0; z-index: 10;
+}
+header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+header h1 span { color: var(--accent); }
+header .sub { color: var(--text2); font-size: 12px; margin: 2px 0 12px; }
+nav.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+nav.tabs button {
+  background: transparent;
+  border: none;
+  color: var(--text2);
+  padding: 10px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+}
+nav.tabs button:hover { color: var(--text); background: var(--bg3); }
+nav.tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--bg3);
+}
+main { max-width: 1180px; margin: 0 auto; padding: 22px; }
+.module { display: none; }
+.module.active { display: block; animation: fadeIn .18s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+}
+.panel h2 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.panel .desc {
+  color: var(--text2);
+  font-size: 12.5px;
+  margin-bottom: 14px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.row label {
+  flex: 0 0 130px;
+  font-size: 12.5px;
+  color: var(--text2);
+}
+.row .val {
+  flex: 0 0 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+  height: 4px;
+}
+
+.btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn.secondary {
+  background: var(--chip);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn.danger { background: var(--bad); }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip {
+  background: var(--chip);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+canvas {
+  width: 100%;
+  height: auto;
+  background: var(--bg3);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.stat-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.stat {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-width: 110px;
+}
+.stat .k { font-size: 11px; color: var(--text2); }
+.stat .v {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.stat .v.good { color: var(--good); }
+.stat .v.warn { color: var(--warn); }
+.stat .v.bad { color: var(--bad); }
+
+.bar-item { margin-bottom: 10px; }
+.bar-item .bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+.bar-item .bar-label b { color: var(--text); font-variant-numeric: tabular-nums; }
+.bar-track {
+  height: 10px;
+  background: var(--bg3);
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+}
+.bar-track .seg { height: 100%; transition: width .18s ease; }
+
+.action-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--bg3);
+  margin-bottom: 8px;
+}
+.action-card.winner {
+  border-color: var(--good);
+  box-shadow: 0 0 0 1px var(--good);
+}
+.action-card .top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.action-card .name { font-weight: 700; font-size: 13px; }
+.action-card .score {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.action-card.winner .score { color: var(--good); }
+
+.log {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  height: 220px;
+  overflow: auto;
+  font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text2);
+}
+.log .entry { padding: 2px 0; border-bottom: 1px solid transparent; }
+.log .entry b { color: var(--text); }
+.log .entry .t { color: var(--accent2); margin-right: 6px; }
+
+details.concept {
+  margin-top: 18px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+details.concept summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--accent);
+  list-style: none;
+}
+details.concept summary::-webkit-details-marker { display: none; }
+details.concept summary::before { content: "▸ "; }
+details.concept[open] summary::before { content: "▾ "; }
+details.concept .body {
+  margin-top: 10px;
+  color: var(--text2);
+  font-size: 13px;
+}
+details.concept .body p { margin-bottom: 8px; }
+details.concept .body code {
+  background: var(--chip);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 12px;
+}
+details.concept .body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+details.concept .body th, details.concept .body td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+}
+details.concept .body th { background: var(--bg3); color: var(--text); }
+
+.muted { color: var(--text2); font-size: 12px; }
+.mt { margin-top: 14px; }
+.center { text-align: center; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--text2);
+}
+.tag.ok { background: rgba(62,207,142,.15); color: var(--good); }
+.tag.warn { background: rgba(255,179,71,.15); color: var(--warn); }
+.tag.bad { background: rgba(255,107,107,.15); color: var(--bad); }
+
+.bucket-board {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.bucket {
+  background: var(--bg3);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  min-height: 130px;
+}
+.bucket h4 {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+.drag-item {
+  background: var(--chip);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: grab;
+  font-size: 12.5px;
+  user-select: none;
+}
+.drag-item:active { cursor: grabbing; opacity: .7; }
+
+.needs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+@media (max-width: 700px) { .needs-grid { grid-template-columns: repeat(2, 1fr); } }
+.need {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+.need .n-name { font-size: 11px; color: var(--text2); margin-bottom: 6px; }
+.need .n-bar {
+  height: 8px;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.need .n-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width .3s ease;
+}
+.need .n-val {
+  font-size: 12px;
+  color: var(--text);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.world {
+  position: relative;
+  height: 220px;
+  background: linear-gradient(180deg, #1a2233 0%, #141a26 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.world .obj {
+  position: absolute;
+  width: 74px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text2);
+  transition: all .3s ease;
+}
+.world .obj .icon {
+  width: 52px; height: 52px;
+  margin: 0 auto 4px;
+  border-radius: 12px;
+  background: var(--chip);
+  border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+}
+.world .obj.using .icon {
+  border-color: var(--good);
+  box-shadow: 0 0 16px rgba(62,207,142,.35);
+}
+.world .npc {
+  position: absolute;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+  transition: left .45s ease, top .45s ease;
+  box-shadow: 0 6px 18px rgba(91,157,255,.4);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎮 Utility AI <span>실험실</span></h1>
+  <div class="sub">효용기반 의사결정을 직접 만지며 익히기 — 슬라이더를 움직여 결과가 어떻게 변하는지 확인하세요</div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="m1" class="active">1. 반응 커브</button>
+    <button data-tab="m2">2. 기대 효용</button>
+    <button data-tab="m3">3. 다요소 합산</button>
+    <button data-tab="m4">4. 선택 전략</button>
+    <button data-tab="m5">5. 관성</button>
+    <button data-tab="m6">6. Sims NPC</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ===== M1 Reaction Curves ===== -->
+<section class="module active" id="m1">
+  <div class="grid">
+    <div class="panel">
+      <h2>반응 커브 실험실</h2>
+      <div class="desc">게임의 원시값(체력, 거리…)을 효용 점수(0~1)로 바꾸는 곡선을 만져보세요.</div>
+
+      <div class="chip-row" id="m1-curve-type">
+        <button class="chip active" data-t="linear">선형</button>
+        <button class="chip" data-t="quadratic">2차</button>
+        <button class="chip" data-t="logistic">로지스틱</button>
+        <button class="chip" data-t="piecewise">Piecewise</button>
+      </div>
+
+      <div id="m1-params"></div>
+
+      <div class="row">
+        <label>입력값 x</label>
+        <input type="range" id="m1-x" min="0" max="100" value="55">
+        <div class="val" id="m1-x-v">55</div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="k">출력 효용 y</div><div class="v" id="m1-y">0.55</div></div>
+        <div class="stat"><div class="k">해석</div><div class="v" id="m1-read" style="font-size:13px">—</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>커브 그래프</h2>
+      <div class="desc">x축 = 입력값(0~100), y축 = 효용(0~1). 점은 지금 슬라이더 위치.</div>
+      <canvas id="m1-canvas" width="560" height="340"></canvas>
+    </div>
+  </div>
+
+  <details class="concept">
+    <summary>이 모듈이 보여주는 개념</summary>
+    <div class="body">
+      <p>효용(Utility)은 원시값이 아니라 <b>「나에게 얼마나 중요한가」</b>입니다. 반응 커브가 그 변환을 담당합니다.</p>
+      <table>
+        <tr><th>커브</th><th>모양</th><th>언제 쓰나</th></tr>
+        <tr><td>선형</td><td>직선</td><td>단순히 "많을수록 좋다"</td></tr>
+        <tr><td>2차 (x<sup>k</sup>)</td><td>포물선</td><td>k로 가파르기 조절. 포화/급등 표현</td></tr>
+        <tr><td>로지스틱</td><td>S자</td><td><b>임계값 넘으면 행동이 급변</b>할 때 (체력 30% → 도망)</td></tr>
+        <tr><td>Piecewise</td><td>점 이은 선</td><td>수식이 안 되는 모양, 기획자 직관 곡선</td></tr>
+      </table>
+      <p>같은 「배고픔 50」인데 커브에 따라 <code>그냥 그렇다</code>가 될 수도, <code>당장 먹어야 한다</code>가 될 수 있습니다. 이게 NPC 성격의 근원입니다.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ===== M2 Expected Utility ===== -->
+<section class="module" id="m2">
+  <div class="grid">
+    <div class="panel">
+      <h2>기대 효용 계산기</h2>
+      <div class="desc">확률(P) × 바람직함(D) = 기대효용. 명중률이 낮아도 이길 수 있는지 확인해보세요.</div>
+
+      <div id="m2-actions"></div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="k">승자</div><div class="v" id="m2-winner" style="font-size:15px">—</div></div>
+        <div class="stat"><div class="k">크로스오버</div><div class="v" id="m2-cross" style="font-size:13px">—</div></div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn secondary" id="m2-preset1">RPG 무기 예시</button>
+        <button class="btn secondary" id="m2-preset2">동률 대결</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>기대효용 비교</h2>
+      <div class="desc">막대 = P×D. 무기1이 명중률 높아도 무기2가 이기는 구간을 만들어보세요.</div>
+      <canvas id="m2-canvas" width="560" height="340"></canvas>
+    </div>
+  </div>
+
+  <details class="concept">
+    <summary>이 모듈이 보여주는 개념</summary>
+    <div class="body">
+      <p>게임월드는 비결정적입니다. "공격하면 맞을 수도, 빗나갈 수도". 그래서 기대효용을 씁니다:</p>
+      <p><code>EU = Σ Pᵢ × Dᵢ</code> (P=확률, D=바람직함)</p>
+      <p>원문 RPG 예시: 무기1 (85% × 0.6 = <b>0.51</b>) vs 무기2 (60% × 0.9 = <b>0.54</b>) → <b>무기2 선택</b>.</p>
+      <p>명중률이 낮아도, <b>맞으면 치명적인 쪽</b>이 기대효용으로 이길 수 있습니다. 이것이 "리스크 감수형" AI와 "안전 추구형" AI를 가르는 지점입니다.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ===== M3 Weighted Multi-Factor ===== -->
+<section class="module" id="m3">
+  <div class="grid">
+    <div class="panel">
+      <h2>게임 상태 & 성격 가중치</h2>
+      <div class="desc">상태를 바꾸고, 가중치로 성격을 조정하면 행동 순위가 뒤집힙니다.</div>
+
+      <div class="row"><label>체력</label><input type="range" id="m3-hp" min="0" max="100" value="70"><div class="val" id="m3-hp-v">70</div></div>
+      <div class="row"><label>배고픔</label><input type="range" id="m3-hunger" min="0" max="100" value="40"><div class="val" id="m3-hunger-v">40</div></div>
+      <div class="row"><label>적 거리</label><input type="range" id="m3-enemy" min="0" max="100" value="30"><div class="val" id="m3-enemy-v">30</div></div>
+      <div class="row"><label>피로도</label><input type="range" id="m3-fatigue" min="0" max="100" value="25"><div class="val" id="m3-fatigue-v">25</div></div>
+
+      <h2 class="mt">성격 가중치</h2>
+      <div class="desc">이 가중치가 "값"을 "나만의 효용"으로 바꿉니다.</div>
+      <div class="row"><label>생존본능</label><input type="range" id="m3-w-survival" min="0" max="2" step="0.1" value="1"><div class="val" id="m3-w-survival-v">1.0</div></div>
+      <div class="row"><label>공격성</label><input type="range" id="m3-w-aggro" min="0" max="2" step="0.1" value="1"><div class="val" id="m3-w-aggro-v">1.0</div></div>
+      <div class="row"><label>탐욕(식욕)</label><input type="range" id="m3-w-greed" min="0" max="2" step="0.1" value="1"><div class="val" id="m3-w-greed-v">1.0</div></div>
+      <div class="row"><label>휴식 선호</label><input type="range" id="m3-w-rest" min="0" max="2" step="0.1" value="1"><div class="val" id="m3-w-rest-v">1.0</div></div>
+
+      <div class="btn-row">
+        <button class="btn secondary" data-m3-preset="warrior">전사형</button>
+        <button class="btn secondary" data-m3-preset="survivor">생존형</button>
+        <button class="btn secondary" data-m3-preset="glutton">먹보</button>
+        <button class="btn secondary" data-m3-preset="lazy">게으름뱅이</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>행동 효용 분해</h2>
+      <div class="desc">각 바의 색 = 그 고려요소가 기여한 만큼. 높은 행동이 선택됩니다.</div>
+      <div id="m3-actions"></div>
+      <div class="stat-row">
+        <div class="stat"><div class="k">선택 행동</div><div class="v" id="m3-winner" style="font-size:15px">—</div></div>
+        <div class="stat"><div class="k">설명</div><div class="v" id="m3-why" style="font-size:12px;font-weight:500">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <details class="concept">
+    <summary>이 모듈이 보여주는 개념</summary>
+    <div class="body">
+      <p>현실의 결정은 요소가 하나가 아닙니다. 체력·배고픔·적 거리·피로가 동시에 작용합니다.</p>
+      <p>각 요소의 효용을 따로 구하고 <b>가중치</b>로 합칩니다:</p>
+      <p><code>최종효용 = w₁×(요소1) + w₂×(요소2) + ...</code></p>
+      <p>가중치를 바꾸면 <b>같은 상황에서 다른 행동</b>을 고릅니다. 이게 NPC「성격」입니다.<br>
+      - 공격성 높음 → 적이 가까우면 거의 항상 공격<br>
+      - 생존본능 높음 → 체력 낮으면 무조건 도망<br>
+      - 탐욕 높음 → 배고프면 전투 중이어도 먹기</p>
+    </div>
+  </details>
+</section>
+
+<!-- ===== M4 Selection Strategies ===== -->
+<section class="module" id="m4">
+  <div class="grid">
+    <div class="panel">
+      <h2>선택 전략</h2>
+      <div class="desc">점수를 매겼다고 끝이 아닙니다. 어떻게 고르느냐가 행동 패턴을 만듭니다.</div>
+
+      <div class="chip-row" id="m4-strategy">
+        <button class="chip active" data-s="argmax">Argmax</button>
+        <button class="chip" data-s="roulette">룰렛</button>
+        <button class="chip" data-s="topk">Top-K</button>
+        <button class="chip" data-s="bucket">Bucketing</button>
+      </div>
+
+      <div id="m4-controls"></div>
+
+      <div class="btn-row">
+        <button class="btn" id="m4-run">100회 결정 실행</button>
+        <button class="btn secondary" id="m4-reset">초기화</button>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="k">고른 행동 수</div><div class="v" id="m4-unique">0</div></div>
+        <div class="stat"><div class="k">바보 선택</div><div class="v" id="m4-stupid">0</div></div>
+        <div class="stat"><div class="k">경고</div><div class="v" id="m4-warn" style="font-size:12px">—</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>100회 선택 분포</h2>
+      <div class="desc">전략마다 분포가 어떻게 다른지 보세요.</div>
+      <canvas id="m4-canvas" width="560" height="280"></canvas>
+      <div class="mt" id="m4-bucket-board" style="display:none">
+        <div class="bucket-board">
+          <div class="bucket" id="bucket-high" data-bucket="high">
+            <h4>버킷 A (높음) <span class="tag ok">우선</span></h4>
+            <div class="drop"></div>
+          </div>
+          <div class="bucket" id="bucket-low" data-bucket="low">
+            <h4>버킷 B (낮음) <span class="tag">예비</span></h4>
+            <div class="drop"></div>
+          </div>
+        </div>
+        <div class="muted mt">행동 카드를 드래그해 버킷을 바꿔보세요. 높은 버킷에 유효 행동이 있으면 낮은 버킷은 절대 선택되지 않습니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <details class="concept">
+    <summary>이 모듈이 보여주는 개념</summary>
+    <div class="body">
+      <p>항상 1등만 고르면 → <b>로봇 같은 AI</b> (같은 상황 = 늘 같은 행동)</p>
+      <p>가중 룰렛 → 다양하지만 <b>가끔 바보 같은 선택</b> (확률이 0이 아니니까)</p>
+      <p>Top-K 랜덤 → 상위 후보만 두고 선택, 균형</p>
+      <p><b>Bucketing (Dual Utility)</b> → 행동을 우선순위 버킷으로 묶음. FPS 경비병이 총 맞고 있는데 커피 마시는 일을 구조적으로 막습니다.</p>
+      <p>원문 예시: The Sims에서 아사 직전이면 → 생존 버킷(먹기)에 유효 행동이 있는 한, 오락 버킷(TV)은 아예 안 봄.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ===== M5 Inertia ===== -->
+<section class="module" id="m5">
+  <div class="grid">
+    <div class="panel">
+      <h2>관성 & 진동 방지</h2>
+      <div class="desc">효용이 비슷하면 프레임마다 행동이 뒤집힙니다. 이것을 막아보세요.</div>
+
+      <div class="row"><label>공격 효용</label><input type="range" id="m5-a" min="0" max="1" step="0.01" value="0.50"><div class="val" id="m5-a-v">0.50</div></div>
+      <div class="row"><label>도망 효용</label><input type="range" id="m5-b" min="0" max="1" step="0.01" value="0.49"><div class="val" id="m5-b-v">0.49</div></div>
+      <div class="row"><label>관성 보너스</label><input type="range" id="m5-inertia" min="0" max="0.3" step="0.01" value="0"><div class="val" id="m5-inertia-v">0.00</div></div>
+      <div class="row"><label>노이즈</label><input type="range" id="m5-noise" min="0" max="0.1" step="0.005" value="0.02"><div class="val" id="m5-noise-v">0.020</div></div>
+
+      <div class="chip-row mt">
+        <button class="chip" id="m5-commit">행동 커밋: 꺼짐</button>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn" id="m5-run">틱 시뮬레이션 (30틱)</button>
+        <button class="btn secondary" id="m5-reset">초기화</button>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="k">행동 전환 횟수</div><div class="v" id="m5-flips">0</div></div>
+        <div class="stat"><div class="k">마지막 행동</div><div class="v" id="m5-last" style="font-size:14px">—</div></div>
+        <div class="stat"><div class="k">상태</div><div class="v" id="m5-status" style="font-size:13px">—</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>틱별 결정 타임라인</h2>
+      <div class="desc">위=공격, 아래=도망. 색이 자주 바뀌면 진동(oscillation)입니다.</div>
+      <canvas id="m5-canvas" width="560" height="300"></canvas>
+    </div>
+  </div>
+
+  <details class="concept">
+    <summary>이 모듈이 보여주는 개념</summary>
+    <div class="body">
+      <p>AI가 매 프레임 결정하고, 두 행동의 효용이 <code>0.50 vs 0.49</code>처럼 비슷하면?</p>
+      <p>→ <b>공격-도망-공격-도망</b>으로 떠는 최악의 AI가 됩니다. (oscillation)</p>
+      <p>해결책:</p>
+      <p>1) <b>현재 행동에 보너스</b> → 비슷하면 계속 유지, 확 높은 새 행동이 올 때만 전환<br>
+      2) <b>행동 커밋</b> → 액션 완료 전에는 재의사결정 금지 ("공격 모션 끝나기 전엔 딴 생각 안 함")</p>
+    </div>
+  </details>
+</section>
+
+<!-- ===== M6 Sims NPC ===== -->
+<section class="module" id="m6">
+  <div class="panel" style="margin-bottom:18px">
+    <div class="flex-between">
+      <div>
+        <h2>종합: Sims형 NPC</h2>
+        <div class="desc">니드가 시간에 따라 감소하고, NPC가 효용으로 행동을 고릅니다.</div>
+      </div>
+      <div class="btn-row" style="margin:0">
+        <button class="btn" id="m6-play">▶ 재생</button>
+        <button class="btn secondary" id="m6-step">한 틱</button>
+        <button class="btn secondary" id="m6-reset">초기화</button>
+      </div>
+    </div>
+
+    <div class="chip-row" id="m6-presets">
+      <button class="chip active" data-p="balanced">균형형</button>
+      <button class="chip" data-p="glutton">먹보</button>
+      <button class="chip" data-p="lazy">게으름뱅이</button>
+      <button class="chip" data-p="clean">위생주의</button>
+      <button class="chip" data-p="party">파티광</button>
+    </div>
+
+    <div class="needs-grid" id="m6-needs"></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>월드</h2>
+      <div class="desc">NPC가 오브젝트로 이동해 행동합니다.</div>
+      <div class="world" id="m6-world">
+        <div class="obj" id="obj-fridge" style="left:8%; top:30%">
+          <div class="icon">🍎</div>냉장고
+        </div>
+        <div class="obj" id="obj-bed" style="left:38%; top:55%">
+          <div class="icon">🛏️</div>침대
+        </div>
+        <div class="obj" id="obj-tv" style="left:62%; top:28%">
+          <div class="icon">📺</div>TV
+        </div>
+        <div class="obj" id="obj-shower" style="left:82%; top:58%">
+          <div class="icon">🚿</div>샤워
+        </div>
+        <div class="npc" id="m6-npc" style="left:45%; top:78%">🤖</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>지금 왜 그걸 골랐나</h2>
+      <div class="desc">선택 순간의 효용 분해입니다. 프리셋을 바꾸면 패턴이 달라집니다.</div>
+      <div id="m6-actions"></div>
+    </div>
+  </div>
+
+  <div class="panel mt">
+    <h2>결정 로그</h2>
+    <div class="log" id="m6-log"></div>
+  </div>
+
+  <details class="concept">
+    <summary>이 모듈이 보여주는 개념</summary>
+    <div class="body">
+      <p>앞의 5개 모듈이 전부 들어간 종합 예제입니다.</p>
+      <p>- <b>반응 커브</b>: 니드(0~100) → 효용 변환<br>
+      - <b>다요소 합산</b>: 여러 니드 + 오브젝트 회복량 → 행동 효용<br>
+      - <b>선택 전략</b>: Argmax (지금은 단순 최고점)<br>
+      - <b>관성</b>: 같은 오브젝트 사용 중이면 유지<br>
+      - <b>기대효용 개념</b>: 오브젝트의 회복 효과가 행동의 "D"</p>
+      <p>프리셋은 가중치 세트입니다. 먹보=식욕 가중치↑, 게으름뱅이=휴식↑. <b>같은 월드, 같은 규칙</b>인데 성격만으로 행동이 완전히 달라집니다.</p>
+    </div>
+  </details>
+</section>
+
+</main>
+
+<script>
+/* ===== common utils ===== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+function bindRange(id, onChange, format) {
+  const el = $('#' + id);
+  const out = $('#' + id + '-v');
+  const update = () => {
+    const v = parseFloat(el.value);
+    if (out) out.textContent = format ? format(v) : v;
+    onChange(v);
+  };
+  el.addEventListener('input', update);
+  update();
+  return el;
+}
+
+function canvasCtx(id) {
+  const c = $('#' + id);
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.width, h = c.height;
+  c.width = w * dpr;
+  c.height = h * dpr;
+  c.style.width = w + 'px';
+  c.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  return { c, ctx, w, h };
+}
+
+function drawGrid(ctx, w, h, pad, xLabel, yLabel) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = '#2a3344';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.t + (h - pad.t - pad.b) * i / 5;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, y);
+    ctx.lineTo(w - pad.r, y);
+    ctx.stroke();
+    const val = (1 - i / 5).toFixed(1);
+    ctx.fillStyle = '#9aa8bc';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(val, 6, y + 3);
+  }
+  for (let i = 0; i <= 5; i++) {
+    const x = pad.l + (w - pad.l - pad.r) * i / 5;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.t);
+    ctx.lineTo(x, h - pad.b);
+    ctx.stroke();
+    ctx.fillStyle = '#9aa8bc';
+    ctx.fillText(String(i * 20), x - 6, h - pad.b + 16);
+  }
+  ctx.fillStyle = '#9aa8bc';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(xLabel, w - pad.r - 30, h - 6);
+  ctx.save();
+  ctx.translate(12, pad.t + 40);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(yLabel, 0, 0);
+  ctx.restore();
+}
+
+/* ===== tab routing ===== */
+$('#tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-tab]');
+  if (!btn) return;
+  $$('#tabs button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  $$('.module').forEach(m => m.classList.remove('active'));
+  $('#' + btn.dataset.tab).classList.add('active');
+});
+
+/* ===== M1 reaction curves ===== */
+(function M1() {
+  const { c, ctx, w, h } = canvasCtx('m1-canvas');
+  const pad = { l: 40, r: 16, t: 16, b: 32 };
+
+  const state = {
+    type: 'linear',
+    m: 100,
+    k: 1.5,
+    center: 50,
+    slope: 0.12,
+    x: 55,
+    points: [[0, 0], [30, 0.2], [55, 0.6], [80, 0.9], [100, 1]]
+  };
+
+  const paramDefs = {
+    linear: [
+      { key: 'm', label: '최대값 m', min: 20, max: 100, step: 1 }
+    ],
+    quadratic: [
+      { key: 'm', label: '최대값 m', min: 20, max: 100, step: 1 },
+      { key: 'k', label: '지수 k', min: 0.2, max: 4, step: 0.1 }
+    ],
+    logistic: [
+      { key: 'center', label: '중심값', min: 10, max: 90, step: 1 },
+      { key: 'slope', label: '기울기', min: 0.02, max: 0.4, step: 0.01 }
+    ],
+    piecewise: []
+  };
+
+  function evalY(x) {
+    if (state.type === 'linear') {
+      return Math.min(1, Math.max(0, x / state.m));
+    }
+    if (state.type === 'quadratic') {
+      return Math.min(1, Math.pow(Math.min(1, x / state.m), state.k));
+    }
+    if (state.type === 'logistic') {
+      return 1 / (1 + Math.exp(-state.slope * (x - state.center)));
+    }
+    // piecewise
+    const pts = state.points;
+    if (x <= pts[0][0]) return pts[0][1];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+      if (x >= x0 && x <= x1) {
+        const t = (x - x0) / (x1 - x0);
+        return y0 + t * (y1 - y0);
+      }
+    }
+    return pts[pts.length - 1][1];
+  }
+
+  function toCanvas(x, y) {
+    return {
+      px: pad.l + (w - pad.l - pad.r) * (x / 100),
+      py: pad.t + (h - pad.t - pad.b) * (1 - y)
+    };
+  }
+
+  function draw() {
+    drawGrid(ctx, w, h, pad, '입력 x', '효용 y');
+
+    // curve
+    ctx.beginPath();
+    for (let i = 0; i <= 100; i++) {
+      const p = toCanvas(i, evalY(i));
+      if (i === 0) ctx.moveTo(p.px, p.py);
+      else ctx.lineTo(p.px, p.py);
+    }
+    ctx.strokeStyle = '#5b9dff';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // piecewise points
+    if (state.type === 'piecewise') {
+      state.points.forEach(([x, y]) => {
+        const p = toCanvas(x, y);
+        ctx.beginPath();
+        ctx.arc(p.px, p.py, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#7c6cff';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    }
+
+    // current point
+    const cy = evalY(state.x);
+    const cp = toCanvas(state.x, cy);
+    ctx.beginPath();
+    ctx.moveTo(cp.px, pad.t);
+    ctx.lineTo(cp.px, h - pad.b);
+    ctx.strokeStyle = 'rgba(255,179,71,.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cp.px, cp.py, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffb347';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // label
+    ctx.fillStyle = '#ffb347';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(`(${state.x}, ${cy.toFixed(2)})`, cp.px + 10, cp.py - 10);
+  }
+
+  function renderParams() {
+    const box = $('#m1-params');
+    const defs = paramDefs[state.type] || [];
+    box.innerHTML = defs.map(d => `
+      <div class="row">
+        <label>${d.label}</label>
+        <input type="range" data-k="${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${state[d.key]}">
+        <div class="val">${state[d.key]}</div>
+      </div>
+    `).join('');
+
+    if (state.type === 'piecewise') {
+      box.innerHTML = `
+        <div class="muted" style="margin-bottom:10px">
+          보라색 점을 드래그해 곡선을 바꿔보세요. 기획자가 원하는 대로 점을 이은 커브입니다.
+        </div>
+        <div class="stat-row">
+          <div class="stat"><div class="k">점 개수</div><div class="v">${state.points.length}</div></div>
+          <div class="stat"><div class="k">편집</div><div class="v" style="font-size:12px">캔버스 드래그</div></div>
+        </div>
+      `;
+      return;
+    }
+
+    box.querySelectorAll('input[type=range]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const k = inp.dataset.k;
+        state[k] = parseFloat(inp.value);
+        inp.nextElementSibling.textContent = state[k];
+        update();
+      });
+    });
+  }
+
+  function update() {
+    $('#m1-x-v').textContent = state.x;
+    const y = evalY(state.x);
+    $('#m1-y').textContent = y.toFixed(3);
+
+    let read = '—';
+    if (state.type === 'logistic') {
+      if (state.x < state.center - 10) read = '임계 이전: 효용 낮음';
+      else if (state.x > state.center + 10) read = '임계 이후: 효용 높음';
+      else read = '⚡ 급변 구간!';
+    } else if (state.type === 'linear') {
+      read = y < 0.3 ? '낮음' : y < 0.7 ? '보통' : '높음';
+    } else if (state.type === 'quadratic') {
+      read = state.k > 1.5 ? '후반 급등형' : state.k < 0.8 ? '초반 포화형' : '완만';
+    } else {
+      read = '점 이은 커브';
+    }
+    $('#m1-read').textContent = read;
+    draw();
+  }
+
+  $('#m1-curve-type').addEventListener('click', (e) => {
+    const btn = e.target.closest('.chip');
+    if (!btn) return;
+    $$('#m1-curve-type .chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    state.type = btn.dataset.t;
+    renderParams();
+    update();
+  });
+
+  bindRange('m1-x', (v) => { state.x = v; update(); });
+
+  // piecewise drag
+  let dragging = -1;
+  function hitPoint(mx, my) {
+    for (let i = 0; i < state.points.length; i++) {
+      const p = toCanvas(state.points[i][0], state.points[i][1]);
+      const dx = mx - p.px, dy = my - p.py;
+      if (dx * dx + dy * dy < 120) return i;
+    }
+    return -1;
+  }
+
+  c.addEventListener('mousedown', (e) => {
+    if (state.type !== 'piecewise') return;
+    const r = c.getBoundingClientRect();
+    dragging = hitPoint(e.clientX - r.left, e.clientY - r.top);
+  });
+  c.addEventListener('mousemove', (e) => {
+    if (state.type !== 'piecewise' || dragging < 0) return;
+    const r = c.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const x = Math.min(100, Math.max(0, ((mx - pad.l) / (w - pad.l - pad.r)) * 100));
+    const y = Math.min(1, Math.max(0, 1 - (my - pad.t) / (h - pad.t - pad.b)));
+    state.points[dragging] = [x, y];
+    state.points.sort((a, b) => a[0] - b[0]);
+    update();
+  });
+  window.addEventListener('mouseup', () => { dragging = -1; });
+
+  renderParams();
+  update();
+})();
+
+/* ===== M2 expected utility ===== */
+(function M2() {
+  const { c, ctx, w, h } = canvasCtx('m2-canvas');
+  const pad = { l: 46, r: 16, t: 20, b: 36 };
+
+  const state = {
+    actions: [
+      { name: '무기 1', p: 0.85, d: 0.6 },
+      { name: '무기 2', p: 0.60, d: 0.9 },
+      { name: '무기 3', p: 0.95, d: 0.3 }
+    ]
+  };
+
+  function render() {
+    const box = $('#m2-actions');
+    box.innerHTML = state.actions.map((a, i) => `
+      <div class="action-card" data-i="${i}">
+        <div class="top">
+          <div class="name">${a.name}</div>
+          <div class="score">EU ${(a.p * a.d).toFixed(3)}</div>
+        </div>
+        <div class="row" style="margin-bottom:6px">
+          <label>확률 P</label>
+          <input type="range" data-i="${i}" data-f="p" min="0" max="1" step="0.01" value="${a.p}">
+          <div class="val">${a.p.toFixed(2)}</div>
+        </div>
+        <div class="row" style="margin-bottom:0">
+          <label>바람직함 D</label>
+          <input type="range" data-i="${i}" data-f="d" min="0" max="1" step="0.01" value="${a.d}">
+          <div class="val">${a.d.toFixed(2)}</div>
+        </div>
+      </div>
+    `).join('');
+
+    const eus = state.actions.map(a => a.p * a.d);
+    const maxI = eus.indexOf(Math.max(...eus));
+    box.querySelectorAll('.action-card').forEach((el, i) => {
+      el.classList.toggle('winner', i === maxI);
+    });
+
+    $('#m2-winner').textContent = state.actions[maxI].name;
+
+    // crossover between first two
+    const a0 = state.actions[0], a1 = state.actions[1];
+    if (a0.d > 0 && a1.d > 0) {
+      const need = a0.d / a1.d; // p1 needed relative
+      $('#m2-cross').textContent = `${a1.name} 이기려면 P₁ > ${(a0.p * a0.d / a1.d).toFixed(2)}`;
+    } else {
+      $('#m2-cross').textContent = '—';
+    }
+
+    draw();
+  }
+
+  function draw() {
+    drawGrid(ctx, w, h, pad, '행동', 'EU');
+
+    const eus = state.actions.map(a => a.p * a.d);
+    const max = Math.max(...eus, 0.5);
+    const barW = (w - pad.l - pad.r) / state.actions.length;
+
+    state.actions.forEach((a, i) => {
+      const eu = a.p * a.d;
+      const bh = (h - pad.t - pad.b) * (eu / max) * 0.85;
+      const x = pad.l + barW * i + barW * 0.2;
+      const y = h - pad.b - bh;
+      const bw = barW * 0.6;
+
+      // P bar (outline)
+      const ph = (h - pad.t - pad.b) * a.p * 0.85;
+      ctx.fillStyle = 'rgba(124,108,255,.25)';
+      ctx.fillRect(x, h - pad.b - ph, bw, ph);
+
+      // EU bar
+      const isMax = eu === Math.max(...eus);
+      ctx.fillStyle = isMax ? '#3ecf8e' : '#5b9dff';
+      ctx.fillRect(x, y, bw, bh);
+
+      // labels
+      ctx.fillStyle = '#e8edf5';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(a.name, x + bw / 2, h - pad.b + 18);
+      ctx.fillStyle = isMax ? '#3ecf8e' : '#9aa8bc';
+      ctx.fillText(eu.toFixed(2), x + bw / 2, y - 8);
+      ctx.textAlign = 'left';
+
+      // P value inside
+      ctx.fillStyle = 'rgba(232,237,245,.7)';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(`P=${a.p.toFixed(2)}`, x + 4, h - pad.b - 8);
+    });
+
+    // legend
+    ctx.fillStyle = '#7c6cff';
+    ctx.fillRect(w - 160, 12, 10, 10);
+    ctx.fillStyle = '#9aa8bc';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('확률 P (배경)', w - 145, 21);
+    ctx.fillStyle = '#5b9dff';
+    ctx.fillRect(w - 160, 28, 10, 10);
+    ctx.fillStyle = '#9aa8bc';
+    ctx.fillText('EU = P×D (전경)', w - 145, 37);
+  }
+
+  $('#m2-actions').addEventListener('input', (e) => {
+    const inp = e.target;
+    if (inp.type !== 'range') return;
+    const i = +inp.dataset.i, f = inp.dataset.f;
+    state.actions[i][f] = parseFloat(inp.value);
+    inp.nextElementSibling.textContent = state.actions[i][f].toFixed(2);
+    render();
+  });
+
+  $('#m2-preset1').addEventListener('click', () => {
+    state.actions = [
+      { name: '무기 1', p: 0.85, d: 0.6 },
+      { name: '무기 2', p: 0.60, d: 0.9 },
+      { name: '무기 3', p: 0.95, d: 0.3 }
+    ];
+    render();
+  });
+  $('#m2-preset2').addEventListener('click', () => {
+    state.actions = [
+      { name: '공격', p: 0.5, d: 1.0 },
+      { name: '도망', p: 0.5, d: 1.0 },
+      { name: '방어', p: 0.7, d: 0.7 }
+    ];
+    render();
+  });
+
+  render();
+})();
+
+/* ===== M3 weighted multi-factor ===== */
+(function M3() {
+  const COLORS = {
+    survival: '#ff6b6b',
+    aggro: '#ffb347',
+    greed: '#3ecf8e',
+    rest: '#5b9dff'
+  };
+
+  const state = {
+    hp: 70, hunger: 40, enemy: 30, fatigue: 25,
+    w: { survival: 1, aggro: 1, greed: 1, rest: 1 }
+  };
+
+  const actions = [
+    {
+      name: '공격',
+      compute(s) {
+        const enemyNear = 1 - s.enemy / 100;
+        const hpOk = s.hp / 100;
+        return {
+          survival: (1 - hpOk) * 0.2,
+          aggro: enemyNear * 0.9 * (0.4 + hpOk * 0.6),
+          greed: 0,
+          rest: 0
+        };
+      }
+    },
+    {
+      name: '도망',
+      compute(s) {
+        const danger = (1 - s.hp / 100) * 0.8 + (1 - s.enemy / 100) * 0.3;
+        return {
+          survival: Math.min(1, danger),
+          aggro: 0,
+          greed: 0,
+          rest: s.fatigue / 100 * 0.3
+        };
+      }
+    },
+    {
+      name: '먹기',
+      compute(s) {
+        return {
+          survival: 0.1,
+          aggro: 0,
+          greed: s.hunger / 100,
+          rest: 0
+        };
+      }
+    },
+    {
+      name: '휴식',
+      compute(s) {
+        return {
+          survival: 0.15,
+          aggro: 0,
+          greed: 0,
+          rest: s.fatigue / 100
+        };
+      }
+    }
+  ];
+
+  function render() {
+    const box = $('#m3-actions');
+    const results = actions.map(a => {
+      const parts = a.compute(state);
+      let total = 0;
+      const weighted = {};
+      for (const k of Object.keys(parts)) {
+        weighted[k] = parts[k] * state.w[k];
+        total += weighted[k];
+      }
+      return { name: a.name, parts: weighted, total };
+    });
+    const max = Math.max(...results.map(r => r.total), 0.001);
+
+    box.innerHTML = results.map(r => {
+      const isWin = r.total === Math.max(...results.map(x => x.total));
+      return `
+        <div class="action-card ${isWin ? 'winner' : ''}">
+          <div class="top">
+            <div class="name">${r.name} ${isWin ? '✓' : ''}</div>
+            <div class="score">${r.total.toFixed(2)}</div>
+          </div>
+          <div class="bar-track">
+            ${Object.keys(r.parts).map(k => {
+              const pct = (r.parts[k] / max) * 100;
+              return `<div class="seg" style="width:${pct}%;background:${COLORS[k]}" title="${k}"></div>`;
+            }).join('')}
+          </div>
+          <div class="muted mt" style="margin-top:6px;font-size:11px">
+            ${Object.keys(r.parts).filter(k => r.parts[k] > 0.01).map(k =>
+              `<span class="tag" style="border-color:${COLORS[k]}">${k} ${r.parts[k].toFixed(2)}</span>`
+            ).join(' ') || '—'}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const best = results.reduce((a, b) => a.total > b.total ? a : b);
+    $('#m3-winner').textContent = best.name;
+
+    const whyMap = {
+      '공격': '적이 가까우고 체력이 충분 → 공격 효용↑',
+      '도망': '체력이 낮거나 위험 → 생존 가중치가 작동',
+      '먹기': '배고픔이 높음 → 식욕(탐욕) 가중치가 작동',
+      '휴식': '피로도가 높음 → 휴식 선호 가중치가 작동'
+    };
+    $('#m3-why').textContent = whyMap[best.name] || '—';
+  }
+
+  bindRange('m3-hp', v => { state.hp = v; render(); });
+  bindRange('m3-hunger', v => { state.hunger = v; render(); });
+  bindRange('m3-enemy', v => { state.enemy = v; render(); });
+  bindRange('m3-fatigue', v => { state.fatigue = v; render(); });
+  bindRange('m3-w-survival', v => { state.w.survival = v; render(); }, v => v.toFixed(1));
+  bindRange('m3-w-aggro', v => { state.w.aggro = v; render(); }, v => v.toFixed(1));
+  bindRange('m3-w-greed', v => { state.w.greed = v; render(); }, v => v.toFixed(1));
+  bindRange('m3-w-rest', v => { state.w.rest = v; render(); }, v => v.toFixed(1));
+
+  $$('[data-m3-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = btn.dataset.m3Preset;
+      const presets = {
+        warrior: { survival: 0.6, aggro: 1.8, greed: 0.4, rest: 0.3 },
+        survivor: { survival: 2.0, aggro: 0.3, greed: 0.8, rest: 0.8 },
+        glutton: { survival: 0.7, aggro: 0.5, greed: 1.8, rest: 0.5 },
+        lazy: { survival: 0.8, aggro: 0.2, greed: 0.7, rest: 1.9 }
+      };
+      const w = presets[p];
+      state.w = { ...w };
+      $('#m3-w-survival').value = w.survival;
+      $('#m3-w-aggro').value = w.aggro;
+      $('#m3-w-greed').value = w.greed;
+      $('#m3-w-rest').value = w.rest;
+      $('#m3-w-survival-v').textContent = w.survival.toFixed(1);
+      $('#m3-w-aggro-v').textContent = w.aggro.toFixed(1);
+      $('#m3-w-greed-v').textContent = w.greed.toFixed(1);
+      $('#m3-w-rest-v').textContent = w.rest.toFixed(1);
+      render();
+    });
+  });
+
+  render();
+})();
+
+/* ===== M4 selection strategies ===== */
+(function M4() {
+  const { c, ctx, w, h } = canvasCtx('m4-canvas');
+  const pad = { l: 40, r: 16, t: 16, b: 36 };
+
+  const state = {
+    strategy: 'argmax',
+    k: 2,
+    topPct: 30,
+    scores: [0.82, 0.61, 0.55, 0.40, 0.18],
+    names: ['공격', '방어', '도망', '먹기', '잡담'],
+    counts: [0, 0, 0, 0, 0],
+    bucket: { 공격: 'high', 방어: 'high', 도망: 'high', 먹기: 'low', 잡담: 'low' },
+    stupid: 0
+  };
+
+  function renderControls() {
+    const box = $('#m4-controls');
+    if (state.strategy === 'topk') {
+      box.innerHTML = `
+        <div class="row"><label>상위 %</label>
+          <input type="range" id="m4-toppct" min="10" max="80" step="5" value="${state.topPct}">
+          <div class="val">${state.topPct}%</div>
+        </div>
+        <div class="muted">효용 상위 ${state.topPct}% 후보만 두고 가중 랜덤 선택합니다.</div>
+      `;
+      $('#m4-toppct').addEventListener('input', e => {
+        state.topPct = +e.target.value;
+        e.target.nextElementSibling.textContent = state.topPct + '%';
+      });
+    } else if (state.strategy === 'bucket') {
+      box.innerHTML = `
+        <div class="muted">드래그로 버킷을 바꿔보세요. 높은 버킷에 유효 행동이 있으면 낮은 버킷은 무시됩니다.</div>
+      `;
+      $('#m4-bucket-board').style.display = 'block';
+      renderBuckets();
+    } else {
+      box.innerHTML = `
+        <div class="muted">${state.strategy === 'argmax'
+          ? '항상 최고 점수만 선택 → 로봇 같은 패턴'
+          : '점수를 확률로 써서 랜덤 선택 → 다양하지만 가끔 바보 선택'}</div>
+      `;
+      $('#m4-bucket-board').style.display = 'none';
+    }
+  }
+
+  function renderBuckets() {
+    const high = $('#bucket-high .drop');
+    const low = $('#bucket-low .drop');
+    high.innerHTML = '';
+    low.innerHTML = '';
+    state.names.forEach((n, i) => {
+      const el = document.createElement('div');
+      el.className = 'drag-item';
+      el.draggable = true;
+      el.dataset.name = n;
+      el.innerHTML = `${n} <span class="muted">(${state.scores[i].toFixed(2)})</span>`;
+      (state.bucket[n] === 'high' ? high : low).appendChild(el);
+    });
+
+    $$('.drag-item').forEach(el => {
+      el.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', el.dataset.name);
+      });
+    });
+    $$('.bucket').forEach(b => {
+      b.addEventListener('dragover', e => e.preventDefault());
+      b.addEventListener('drop', e => {
+        e.preventDefault();
+        const name = e.dataTransfer.getData('text/plain');
+        state.bucket[name] = b.dataset.bucket;
+        renderBuckets();
+        draw();
+      });
+    });
+  }
+
+  function pick() {
+    const n = state.scores.length;
+    if (state.strategy === 'argmax') {
+      return state.scores.indexOf(Math.max(...state.scores));
+    }
+    if (state.strategy === 'roulette') {
+      const sum = state.scores.reduce((a, b) => a + b, 0);
+      let r = Math.random() * sum;
+      for (let i = 0; i < n; i++) {
+        r -= state.scores[i];
+        if (r <= 0) return i;
+      }
+      return n - 1;
+    }
+    if (state.strategy === 'topk') {
+      const idx = state.scores.map((s, i) => ({ s, i })).sort((a, b) => b.s - a.s);
+      const cut = Math.max(1, Math.ceil(n * state.topPct / 100));
+      const pool = idx.slice(0, cut);
+      const sum = pool.reduce((a, b) => a + b.s, 0);
+      let r = Math.random() * sum;
+      for (const p of pool) {
+        r -= p.s;
+        if (r <= 0) return p.i;
+      }
+      return pool[0].i;
+    }
+    // bucketing
+    const highNames = state.names.filter(n => state.bucket[n] === 'high');
+    const highIdx = state.names.map((n, i) => state.bucket[n] === 'high' ? i : -1).filter(i => i >= 0);
+    const lowIdx = state.names.map((n, i) => state.bucket[n] === 'low' ? i : -1).filter(i => i >= 0);
+    const pool = highIdx.length ? highIdx : lowIdx;
+    const sum = pool.reduce((a, i) => a + state.scores[i], 0);
+    let r = Math.random() * sum;
+    for (const i of pool) {
+      r -= state.scores[i];
+      if (r <= 0) return i;
+    }
+    return pool[0];
+  }
+
+  function draw() {
+    drawGrid(ctx, w, h, pad, '행동', '횟수');
+    const max = Math.max(...state.counts, 1);
+    const barW = (w - pad.l - pad.r) / state.scores.length;
+
+    state.counts.forEach((cnt, i) => {
+      const bh = (h - pad.t - pad.b) * (cnt / max) * 0.85;
+      const x = pad.l + barW * i + barW * 0.2;
+      const y = h - pad.b - bh;
+      const bw = barW * 0.6;
+
+      const isLowUtility = state.scores[i] === Math.min(...state.scores);
+      ctx.fillStyle = cnt > 0 && isLowUtility && state.strategy !== 'argmax' ? '#ff6b6b' : '#5b9dff';
+      ctx.fillRect(x, y, bw, bh);
+
+      ctx.fillStyle = '#e8edf5';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(state.names[i], x + bw / 2, h - pad.b + 16);
+      ctx.fillText(String(cnt), x + bw / 2, y - 6);
+      if (state.strategy === 'bucket') {
+        ctx.fillStyle = state.bucket[state.names[i]] === 'high' ? '#3ecf8e' : '#9aa8bc';
+        ctx.fillText(state.bucket[state.names[i]] === 'high' ? 'A' : 'B', x + bw / 2, h - pad.b + 30);
+      }
+      ctx.textAlign = 'left';
+    });
+  }
+
+  function run() {
+    state.counts = [0, 0, 0, 0, 0];
+    state.stupid = 0;
+    const minScore = Math.min(...state.scores);
+    for (let i = 0; i < 100; i++) {
+      const idx = pick();
+      state.counts[idx]++;
+      if (state.scores[idx] === minScore) state.stupid++;
+    }
+    const unique = state.counts.filter(c => c > 0).length;
+    $('#m4-unique').textContent = unique;
+    $('#m4-stupid').textContent = state.stupid;
+
+    let warn = '—', cls = '';
+    if (state.strategy === 'argmax') {
+      warn = '🤖 로봇 같음'; cls = 'warn';
+    } else if (state.stupid > 8) {
+      warn = '⚠️ 바보 선택 과다'; cls = 'bad';
+    } else if (unique >= 3) {
+      warn = '✅ 다양함'; cls = 'good';
+    } else {
+      warn = '적당함'; cls = '';
+    }
+    const el = $('#m4-warn');
+    el.textContent = warn;
+    el.className = 'v ' + cls;
+
+    draw();
+  }
+
+  $('#m4-strategy').addEventListener('click', e => {
+    const btn = e.target.closest('.chip');
+    if (!btn) return;
+    $$('#m4-strategy .chip').forEach(x => x.classList.remove('active'));
+    btn.classList.add('active');
+    state.strategy = btn.dataset.s;
+    renderControls();
+    run();
+  });
+
+  $('#m4-run').addEventListener('click', run);
+  $('#m4-reset').addEventListener('click', () => {
+    state.counts = [0, 0, 0, 0, 0];
+    state.stupid = 0;
+    $('#m4-unique').textContent = '0';
+    $('#m4-stupid').textContent = '0';
+    $('#m4-warn').textContent = '—';
+    draw();
+  });
+
+  renderControls();
+  draw();
+})();
+
+/* ===== M5 inertia ===== */
+(function M5() {
+  const { c, ctx, w, h } = canvasCtx('m5-canvas');
+  const pad = { l: 40, r: 16, t: 16, b: 28 };
+
+  const state = {
+    a: 0.50, b: 0.49, inertia: 0, noise: 0.02,
+    commit: false, current: 0, history: [], flips: 0, tick: 0
+  };
+
+  function reset() {
+    state.history = [];
+    state.flips = 0;
+    state.tick = 0;
+    state.current = 0;
+    $('#m5-flips').textContent = '0';
+    $('#m5-last').textContent = '—';
+    $('#m5-status').textContent = '—';
+    draw();
+  }
+
+  function step() {
+    if (state.commit && state.history.length > 0 && state.tick % 5 !== 0) {
+      // commit lock: keep previous for 5 ticks
+      state.history.push(state.current);
+      state.tick++;
+      draw();
+      return;
+    }
+    let scoreA = state.a + (Math.random() - 0.5) * 2 * state.noise;
+    let scoreB = state.b + (Math.random() - 0.5) * 2 * state.noise;
+    if (state.current === 0) scoreA += state.inertia;
+    else scoreB += state.inertia;
+
+    const next = scoreA >= scoreB ? 0 : 1;
+    if (state.history.length > 0 && state.history[state.history.length - 1] !== next) {
+      state.flips++;
+    }
+    state.current = next;
+    state.history.push(next);
+    state.tick++;
+
+    $('#m5-flips').textContent = state.flips;
+    $('#m5-last').textContent = next === 0 ? '공격' : '도망';
+    const st = state.flips > 10 ? '⚠️ 진동!' : state.flips > 4 ? '불안정' : '안정';
+    const el = $('#m5-status');
+    el.textContent = st;
+    el.className = 'v ' + (state.flips > 10 ? 'bad' : state.flips > 4 ? 'warn' : 'good');
+    draw();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    // background
+    ctx.fillStyle = '#1e2532';
+    ctx.fillRect(0, 0, w, h);
+
+    const n = state.history.length;
+    if (n === 0) {
+      ctx.fillStyle = '#9aa8bc';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('「틱 시뮬레이션」을 눌러보세요', w / 2, h / 2);
+      ctx.textAlign = 'left';
+      return;
+    }
+
+    const cellW = Math.min(18, (w - pad.l - pad.r) / Math.max(n, 30));
+    const midY = h / 2;
+
+    // labels
+    ctx.fillStyle = '#ffb347';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('공격', 6, pad.t + 12);
+    ctx.fillStyle = '#5b9dff';
+    ctx.fillText('도망', 6, h - pad.b - 4);
+
+    // center line
+    ctx.strokeStyle = '#2a3344';
+    ctx.beginPath();
+    ctx.moveTo(pad.l, midY);
+    ctx.lineTo(w - pad.r, midY);
+    ctx.stroke();
+
+    // timeline cells
+    state.history.forEach((v, i) => {
+      const x = pad.l + i * cellW;
+      if (x > w - pad.r) return;
+      ctx.fillStyle = v === 0 ? '#ffb347' : '#5b9dff';
+      const ch = 28;
+      const y = v === 0 ? midY - ch - 6 : midY + 6;
+      ctx.fillRect(x, y, Math.max(2, cellW - 1), ch);
+    });
+
+    // flip markers
+    for (let i = 1; i < n; i++) {
+      if (state.history[i] !== state.history[i - 1]) {
+        const x = pad.l + i * cellW;
+        ctx.strokeStyle = 'rgba(255,107,107,.7)';
+        ctx.beginPath();
+        ctx.moveTo(x, pad.t);
+        ctx.lineTo(x, h - pad.b);
+        ctx.stroke();
+      }
+    }
+
+    // score display
+    ctx.fillStyle = '#9aa8bc';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(`공격 ${state.a.toFixed(2)} (관성+${state.inertia.toFixed(2)})  |  도망 ${state.b.toFixed(2)}  |  노이즈 ±${state.noise.toFixed(3)}`, pad.l, h - 8);
+  }
+
+  bindRange('m5-a', v => { state.a = v; draw(); }, v => v.toFixed(2));
+  bindRange('m5-b', v => { state.b = v; draw(); }, v => v.toFixed(2));
+  bindRange('m5-inertia', v => { state.inertia = v; draw(); }, v => v.toFixed(2));
+  bindRange('m5-noise', v => { state.noise = v; draw(); }, v => v.toFixed(3));
+
+  $('#m5-commit').addEventListener('click', () => {
+    state.commit = !state.commit;
+    $('#m5-commit').textContent = '행동 커밋: ' + (state.commit ? '켜짐' : '꺼짐');
+    $('#m5-commit').classList.toggle('active', state.commit);
+  });
+
+  $('#m5-run').addEventListener('click', () => {
+    for (let i = 0; i < 30; i++) step();
+  });
+  $('#m5-reset').addEventListener('click', reset);
+
+  draw();
+})();
+
+/* ===== M6 Sims NPC ===== */
+(function M6() {
+  const state = {
+    needs: { hunger: 55, energy: 70, fun: 50, hygiene: 60 },
+    decay: { hunger: 1.8, energy: 1.2, fun: 1.5, hygiene: 1.0 },
+    weights: { hunger: 1, energy: 1, fun: 1, hygiene: 1 },
+    currentAction: null,
+    actionTicksLeft: 0,
+    playing: false,
+    timer: null,
+    tick: 0
+  };
+
+  const presets = {
+    balanced: { hunger: 1, energy: 1, fun: 1, hygiene: 1 },
+    glutton: { hunger: 2.0, energy: 0.7, fun: 0.5, hygiene: 0.4 },
+    lazy: { hunger: 0.7, energy: 1.9, fun: 0.8, hygiene: 0.4 },
+    clean: { hunger: 0.7, energy: 0.7, fun: 0.5, hygiene: 2.0 },
+    party: { hunger: 0.5, energy: 0.8, fun: 2.0, hygiene: 0.4 }
+  };
+
+  const objects = [
+    {
+      id: 'fridge', name: '먹기', icon: '🍎', el: '#obj-fridge',
+      duration: 6,
+      effect: { hunger: +25 },
+      utility(n) { return (n.hunger / 100) * 1.2; }
+    },
+    {
+      id: 'bed', name: '자기', icon: '🛏️', el: '#obj-bed',
+      duration: 10,
+      effect: { energy: +30 },
+      utility(n) { return (n.energy < 100 ? (1 - n.energy / 100) : 0) * 1.3; }
+    },
+    {
+      id: 'tv', name: 'TV보기', icon: '📺', el: '#obj-tv',
+      duration: 8,
+      effect: { fun: +28 },
+      utility(n) { return (1 - n.fun / 100) * 1.1; }
+    },
+    {
+      id: 'shower', name: '샤워', icon: '🚿', el: '#obj-shower',
+      duration: 5,
+      effect: { hygiene: +35 },
+      utility(n) { return (1 - n.hygiene / 100) * 1.0; }
+    }
+  ];
+
+  const COLOR = {
+    hunger: '#ffb347', energy: '#5b9dff', fun: '#3ecf8e', hygiene: '#7c6cff'
+  };
+
+  function renderNeeds() {
+    $('#m6-needs').innerHTML = Object.keys(state.needs).map(k => {
+      const label = { hunger: '배고픔', energy: '에너지', fun: '즐거움', hygiene: '청결' }[k];
+      return `
+        <div class="need">
+          <div class="n-name">${label}</div>
+          <div class="n-bar"><i style="width:${state.needs[k]}%;background:${COLOR[k]}"></i></div>
+          <div class="n-val">${Math.round(state.needs[k])}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderActions() {
+    const scored = objects.map(o => {
+      const raw = o.utility(state.needs);
+      // map need → weight key
+      const wmap = { hunger: 'hunger', energy: 'energy', fun: 'fun', hygiene: 'hygiene' };
+      // each object uses one primary need weight
+      const primary = {
+        fridge: 'hunger', bed: 'energy', tv: 'fun', shower: 'hygiene'
+      }[o.id];
+      const total = raw * state.weights[primary];
+      return { ...o, raw, total, primary };
+    });
+    const max = Math.max(...scored.map(s => s.total), 0.001);
+    const best = scored.reduce((a, b) => a.total > b.total ? a : b);
+
+    $('#m6-actions').innerHTML = scored.map(s => `
+      <div class="action-card ${s.id === best.id ? 'winner' : ''}">
+        <div class="top">
+          <div class="name">${s.icon} ${s.name}</div>
+          <div class="score">${s.total.toFixed(2)}</div>
+        </div>
+        <div class="bar-track">
+          <div class="seg" style="width:${(s.total / max) * 100}%;background:${COLOR[s.primary]}"></div>
+        </div>
+        <div class="muted" style="margin-top:6px;font-size:11px">
+          ${s.primary} 가중치 ${state.weights[s.primary].toFixed(1)} × 니드 효용 ${s.raw.toFixed(2)}
+          ${state.currentAction === s.id ? '<span class="tag ok">실행 중</span>' : ''}
+        </div>
+      </div>
+    `).join('');
+
+    // highlight world object
+    objects.forEach(o => {
+      const el = $(o.el);
+      if (el) el.classList.toggle('using', state.currentAction === o.id);
+    });
+  }
+
+  function log(msg) {
+    const box = $('#m6-log');
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = `<span class="t">t${state.tick}</span>${msg}`;
+    box.prepend(div);
+    while (box.children.length > 40) box.removeChild(box.lastChild);
+  }
+
+  function moveTo(id) {
+    const npc = $('#m6-npc');
+    const obj = objects.find(o => o.id === id);
+    if (!obj) return;
+    const el = $(obj.el);
+    const world = $('#m6-world');
+    const wr = world.getBoundingClientRect();
+    const or = el.getBoundingClientRect();
+    const x = ((or.left - wr.left) + or.width / 2) / wr.width * 100;
+    const y = ((or.top - wr.top) + or.height) / wr.height * 100;
+    npc.style.left = x + '%';
+    npc.style.top = Math.min(88, y) + '%';
+  }
+
+  function tick() {
+    state.tick++;
+
+    // decay needs
+    for (const k of Object.keys(state.needs)) {
+      state.needs[k] = Math.max(0, state.needs[k] - state.decay[k]);
+    }
+
+    // continue action
+    if (state.currentAction && state.actionTicksLeft > 0) {
+      const obj = objects.find(o => o.id === state.currentAction);
+      for (const [k, v] of Object.entries(obj.effect)) {
+        state.needs[k] = Math.min(100, state.needs[k] + v / obj.duration);
+      }
+      state.actionTicksLeft--;
+      if (state.actionTicksLeft === 0) {
+        log(`<b>${obj.name}</b> 완료`);
+        state.currentAction = null;
+      }
+      renderNeeds();
+      renderActions();
+      return;
+    }
+
+    // decide
+    const scored = objects.map(o => {
+      const primary = { fridge: 'hunger', bed: 'energy', tv: 'fun', shower: 'hygiene' }[o.id];
+      return { ...o, total: o.utility(state.needs) * state.weights[primary], primary };
+    });
+    const best = scored.reduce((a, b) => a.total > b.total ? a : b);
+
+    // inertia-ish: if same as recent and score not much higher for another, stay
+    state.currentAction = best.id;
+    state.actionTicksLeft = best.duration;
+    moveTo(best.id);
+    log(`<b>${best.name}</b> 선택 — 효용 <b>${best.total.toFixed(2)}</b> (${best.primary} 가중 ${state.weights[best.primary].toFixed(1)})`);
+
+    renderNeeds();
+    renderActions();
+  }
+
+  function play() {
+    if (state.playing) {
+      state.playing = false;
+      clearInterval(state.timer);
+      $('#m6-play').textContent = '▶ 재생';
+      return;
+    }
+    state.playing = true;
+    $('#m6-play').textContent = '⏸ 일시정지';
+    state.timer = setInterval(tick, 700);
+  }
+
+  $('#m6-play').addEventListener('click', play);
+  $('#m6-step').addEventListener('click', tick);
+  $('#m6-reset').addEventListener('click', () => {
+    state.needs = { hunger: 55, energy: 70, fun: 50, hygiene: 60 };
+    state.currentAction = null;
+    state.actionTicksLeft = 0;
+    state.tick = 0;
+    if (state.playing) play();
+    $('#m6-log').innerHTML = '';
+    log('초기화됨');
+    renderNeeds();
+    renderActions();
+  });
+
+  $('#m6-presets').addEventListener('click', e => {
+    const btn = e.target.closest('.chip');
+    if (!btn) return;
+    $$('#m6-presets .chip').forEach(x => x.classList.remove('active'));
+    btn.classList.add('active');
+    state.weights = { ...presets[btn.dataset.p] };
+    log(`프리셋 변경 → <b>${btn.textContent}</b> (가중치 ${JSON.stringify(state.weights)})`);
+    renderActions();
+  });
+
+  renderNeeds();
+  renderActions();
+  log('실행 준비됨. 「▶ 재생」 또는 「한 틱」을 눌러보세요.');
+})();
+
+</script>
+</body>
+</html>
