@@ -91,6 +91,18 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">
     <div>
       <div class="row">
+        <label>홈 포메이션</label>
+        <select id="formation-home" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px">
+          <option>4-4-2</option><option>4-3-3</option><option>3-5-2</option><option>5-3-2</option><option>4-2-3-1</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>원정 포메이션</label>
+        <select id="formation-away" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px">
+          <option>4-4-2</option><option selected>4-3-3</option><option>3-5-2</option><option>5-3-2</option><option>4-2-3-1</option>
+        </select>
+      </div>
+      <div class="row">
         <label>홈 공격성</label>
         <input type="range" id="home-aggro" min="0.5" max="1.6" step="0.05" value="1">
         <div class="val" id="home-aggro-v">1.0</div>
@@ -140,12 +152,29 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
     </div>
   </div>
 
+  <div class="mt">
+    <div class="flex-between" style="margin-bottom:8px">
+      <div>
+        <h2 style="font-size:13px">선수 로스터 (클릭해 개별 조정)</h2>
+        <div class="muted">각 선수는 주력·패스·슈팅·태클·시야·드리블 개별 능력치를 가집니다. 팀 전술 슬라이더와 곱해져 행동 효용이 결정됩니다.</div>
+      </div>
+      <button class="btn secondary" id="btn-reset-roster">로스터 초기화</button>
+    </div>
+    <div class="chip-row" id="roster-team-filter">
+      <button class="chip active" data-team="0">HOME</button>
+      <button class="chip" data-team="1">AWAY</button>
+    </div>
+    <div id="roster-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+    <div id="player-editor" style="margin-top:10px"></div>
+  </div>
+
   <div class="stat-row" id="report-stats">
     <div class="stat"><div class="k">상태</div><div class="v" id="sim-status" style="font-size:13px">대기 중</div></div>
+    <div class="stat" style="min-width:130px"><div class="k">최종 스코어</div><div class="v" id="final-score" style="font-size:22px">—</div></div>
     <div class="stat"><div class="k">시드</div><div class="v" id="sim-seed" style="font-size:13px">—</div></div>
     <div class="stat"><div class="k">프레임</div><div class="v" id="sim-frames">0</div></div>
     <div class="stat"><div class="k">이벤트</div><div class="v" id="sim-events">0</div></div>
-    <div class="stat"><div class="k">점수</div><div class="v" id="sim-score" style="font-size:16px">—</div></div>
+    <div class="stat"><div class="k">종료 점수</div><div class="v" id="sim-score" style="font-size:16px">—</div></div>
   </div>
 
   <div class="muted">로그 객체 미리보기 (이게 뷰어로 들어가는 데이터)</div>
@@ -170,13 +199,15 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
 
     <div class="btn-row">
       <button class="btn" id="btn-play" disabled>▶ 재생</button>
+      <button class="btn secondary" id="btn-full" disabled>⚡ 90분 완주</button>
       <button class="btn secondary" id="btn-pause" disabled>⏸</button>
       <button class="btn secondary" id="btn-reset-view" disabled>⏮ 처음</button>
       <div class="chip-row" style="margin:0">
-        <button class="chip active" data-speed="1">1×</button>
-        <button class="chip" data-speed="2">2×</button>
-        <button class="chip" data-speed="4">4×</button>
+        <button class="chip" data-speed="1">1×</button>
+        <button class="chip active" data-speed="4">4×</button>
         <button class="chip" data-speed="10">10×</button>
+        <button class="chip" data-speed="30">30×</button>
+        <button class="chip" data-speed="60">60×</button>
       </div>
     </div>
 
@@ -187,9 +218,10 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
     </div>
 
     <div class="stat-row">
-      <div class="stat"><div class="k">현재 시각</div><div class="v" id="view-time" style="font-size:14px">0:00</div></div>
+      <div class="stat"><div class="k">경기 시간</div><div class="v" id="view-time" style="font-size:14px">0:00 / 90:00</div></div>
       <div class="stat"><div class="k">볼 소유</div><div class="v" id="view-owner" style="font-size:13px">—</div></div>
       <div class="stat"><div class="k">재생 상태</div><div class="v" id="view-state" style="font-size:13px">로그 대기</div></div>
+      <div class="stat"><div class="k">진행</div><div class="v" id="view-progress" style="font-size:13px">0%</div></div>
     </div>
   </div>
 
@@ -256,34 +288,76 @@ const util = {
   logistic:(x,c,s)=>1/(1+Math.exp(-s*(x-c)))
 };
 
-const FORMATION = [
-  { role:'GK', x:0.04, y:0.50 },
-  { role:'DF', x:0.22, y:0.28 },
-  { role:'DF', x:0.22, y:0.72 },
-  { role:'FW', x:0.58, y:0.32 },
-  { role:'FW', x:0.58, y:0.68 }
-];
+const SLOT_N = 11;
 
-function makePlayer(id, team, slot, rng, aggro, tac){
+const FORMATIONS = {
+  '4-4-2': [
+    { role:'GK', x:0.04, y:0.50 },
+    { role:'DF', x:0.18, y:0.16 }, { role:'DF', x:0.18, y:0.38 },
+    { role:'DF', x:0.18, y:0.62 }, { role:'DF', x:0.18, y:0.84 },
+    { role:'MF', x:0.42, y:0.16 }, { role:'MF', x:0.42, y:0.38 },
+    { role:'MF', x:0.42, y:0.62 }, { role:'MF', x:0.42, y:0.84 },
+    { role:'FW', x:0.68, y:0.35 }, { role:'FW', x:0.68, y:0.65 }
+  ],
+  '4-3-3': [
+    { role:'GK', x:0.04, y:0.50 },
+    { role:'DF', x:0.18, y:0.16 }, { role:'DF', x:0.18, y:0.38 },
+    { role:'DF', x:0.18, y:0.62 }, { role:'DF', x:0.18, y:0.84 },
+    { role:'MF', x:0.44, y:0.28 }, { role:'MF', x:0.40, y:0.50 }, { role:'MF', x:0.44, y:0.72 },
+    { role:'FW', x:0.72, y:0.20 }, { role:'FW', x:0.76, y:0.50 }, { role:'FW', x:0.72, y:0.80 }
+  ],
+  '3-5-2': [
+    { role:'GK', x:0.04, y:0.50 },
+    { role:'DF', x:0.18, y:0.28 }, { role:'DF', x:0.16, y:0.50 }, { role:'DF', x:0.18, y:0.72 },
+    { role:'MF', x:0.40, y:0.12 }, { role:'MF', x:0.38, y:0.32 },
+    { role:'MF', x:0.36, y:0.50 },
+    { role:'MF', x:0.38, y:0.68 }, { role:'MF', x:0.40, y:0.88 },
+    { role:'FW', x:0.70, y:0.35 }, { role:'FW', x:0.70, y:0.65 }
+  ],
+  '5-3-2': [
+    { role:'GK', x:0.04, y:0.50 },
+    { role:'DF', x:0.16, y:0.12 }, { role:'DF', x:0.18, y:0.31 },
+    { role:'DF', x:0.16, y:0.50 },
+    { role:'DF', x:0.18, y:0.69 }, { role:'DF', x:0.16, y:0.88 },
+    { role:'MF', x:0.42, y:0.28 }, { role:'MF', x:0.40, y:0.50 }, { role:'MF', x:0.42, y:0.72 },
+    { role:'FW', x:0.68, y:0.35 }, { role:'FW', x:0.68, y:0.65 }
+  ],
+  '4-2-3-1': [
+    { role:'GK', x:0.04, y:0.50 },
+    { role:'DF', x:0.18, y:0.16 }, { role:'DF', x:0.18, y:0.38 },
+    { role:'DF', x:0.18, y:0.62 }, { role:'DF', x:0.18, y:0.84 },
+    { role:'MF', x:0.36, y:0.38 }, { role:'MF', x:0.36, y:0.62 },
+    { role:'MF', x:0.54, y:0.20 }, { role:'MF', x:0.56, y:0.50 }, { role:'MF', x:0.54, y:0.80 },
+    { role:'FW', x:0.76, y:0.50 }
+  ]
+};
+
+function getFormation(name){
+  return FORMATIONS[name] || FORMATIONS['4-4-2'];
+}
+
+function makePlayer(id, team, slot, rng, aggro, tac, override){
   tac = tac||{};
-  const attrs = {
-    pace: (55+rng()*35)*(tac.pace||1),
+  const base = {
+    pace: 55+rng()*35,
     passing: 50+rng()*40,
     shooting: 40+rng()*45,
     tackling: 45+rng()*40,
     vision: 50+rng()*40,
     dribbling: 50+rng()*40
   };
+  const attrs = Object.assign(base, override||{});
+  attrs.pace = attrs.pace * (tac.pace||1);
   const fx = team===0 ? slot.x : 1-slot.x;
   return {
-    id, team, role: slot.role,
+    id, team, role: slot.role, number: (id % SLOT_N) + 1,
     x: fx*FIELD_W, y: slot.y*FIELD_H, vx:0, vy:0,
     attrs, stamina:100,
     w: {
-      shoot: (slot.role==='FW'?1.3:slot.role==='GK'?0.1:0.7)*aggro*(tac.shoot||1),
-      pass: 1.0*(tac.pass||1),
-      dribble: (slot.role==='FW'?1.2:0.9)*aggro*(tac.dribble||1),
-      tackle: (slot.role==='DF'?1.3:0.8)*(tac.tackle||1),
+      shoot: (slot.role==='FW'?1.3:slot.role==='GK'?0.1:slot.role==='MF'?0.9:0.6)*aggro*(tac.shoot||1),
+      pass: (slot.role==='MF'?1.15:1.0)*(tac.pass||1),
+      dribble: (slot.role==='FW'?1.2:slot.role==='MF'?1.0:0.8)*aggro*(tac.dribble||1),
+      tackle: (slot.role==='DF'?1.3:slot.role==='MF'?0.95:0.7)*(tac.tackle||1),
       position: 1.0
     },
     action: 'idle'
@@ -299,14 +373,25 @@ function createMatch(opts){
     shoot:1, pass:1, dribble:1, tackle:1,
     line:0.12, gk:0.10, pace:1
   }, opts.tactics||{});
+  const formHome = getFormation(opts.formationHome);
+  const formAway = getFormation(opts.formationAway);
+  const overrides = opts.playerOverrides || {};
   const players = [];
   for (let t=0;t<2;t++){
-    FORMATION.forEach((slot,i)=>{
-      players.push(makePlayer(t*5+i, t, slot, rng, t===0?homeAggro:awayAggro, tac));
+    const form = t===0 ? formHome : formAway;
+    form.forEach((slot,i)=>{
+      const id = t*SLOT_N + i;
+      players.push(makePlayer(
+        id, t, slot, rng,
+        t===0?homeAggro:awayAggro,
+        tac,
+        overrides[id]
+      ));
     });
   }
   return {
     seed, time:0, tick:0, score:[0,0], players, tactics:tac,
+    formations:[formHome, formAway],
     ball:{ x:FIELD_W/2, y:FIELD_H/2, vx:0, vy:0, owner:null, passTarget:null },
     kickoffTeam:0,
     events:[],
@@ -316,7 +401,14 @@ function createMatch(opts){
         seed, tickDt:TICK_DT, recordEvery:RECORD_EVERY,
         matchSeconds:MATCH_SECONDS,
         field:{ w:FIELD_W, h:FIELD_H, goalW:GOAL_W },
-        teamSize:5, homeAggro, awayAggro, tactics:tac
+        teamSize:SLOT_N, homeAggro, awayAggro, tactics:tac,
+        formationHome: opts.formationHome || '4-4-2',
+        formationAway: opts.formationAway || '4-4-2',
+        players: players.map(p=>({
+          id:p.id, team:p.team, number:p.number, role:p.role,
+          attrs:{ pace:r1(p.attrs.pace), passing:r1(p.attrs.passing), shooting:r1(p.attrs.shooting),
+            tackling:r1(p.attrs.tackling), vision:r1(p.attrs.vision), dribbling:r1(p.attrs.dribbling) }
+        }))
       },
       frames:[], events:[], score:[0,0], stats:null, duration:0
     }
@@ -352,13 +444,13 @@ const openness = (state,p)=>clamp(1-pressureOn(state,p)/2,0,1);
 
 function scoreShoot(state,p){
   const g=goalTarget(p.team), d=dist(p,g);
-  if (d>42) return -1; // too far to shoot
+  if (d>34) return -1; // too far to shoot
   const angle=1-Math.abs(p.y-g.y)/(FIELD_H/2);
   const pressure=pressureOn(state,p);
   const skill=p.attrs.shooting/100;
-  const urgency = (state.time>4300 && state.score[p.team]<=state.score[1-p.team]) ? 0.2 : 0;
+  const urgency = (state.time>4300 && state.score[p.team]<=state.score[1-p.team]) ? 0.15 : 0;
   // steep falloff with distance — only close-range shots compete with pass/dribble
-  return (util.inverse(d,32)*0.70*angle + skill*0.20 + util.inverse(pressure,1.5)*0.10 + urgency) * p.w.shoot * 0.85;
+  return (util.inverse(d,28)*0.70*angle + skill*0.18 + util.inverse(pressure,1.5)*0.12 + urgency) * p.w.shoot * 0.72;
 }
 
 function scorePass(state,p,mate){
@@ -436,7 +528,7 @@ function decideOffBall(state,p,teamHasBall,rng){
       return { action:'mark', target:{ x:lerp(mark.x,gx,0.25), y:mark.y } };
     }
   }
-  const slot=FORMATION[p.id%5];
+  const slot=(state.formations&&state.formations[p.team]||getFormation('4-4-2'))[p.id%SLOT_N];
   const fx=p.team===0?slot.x:1-slot.x;
   const lineH=(state.tactics&&state.tactics.line!=null)?state.tactics.line:0.12;
   const shift=((ball.x/FIELD_W)-0.5)*(0.20+lineH);
@@ -481,7 +573,7 @@ function executeAction(state,p,decision){
     // accuracy: wide spread + chance to miss the frame entirely
     const spread=(1-skill)*16+8;
     const ty=g.y+(Math.random()-0.5)*spread*2;
-    const missChance=clamp(0.28+(d/42)*0.45-skill*0.18,0.08,0.75);
+    const missChance=clamp(0.38+(d/34)*0.42-skill*0.16,0.14,0.82);
     const speed=18+skill*8;
     const dx=g.x-p.x, dy=ty-p.y, dd=Math.hypot(dx,dy)||1;
     if (Math.random()<missChance){
@@ -548,7 +640,7 @@ function updateBall(state,dt){
   // GK save check when ball enters the goal area
   if (ball.x<18||ball.x>FIELD_W-18){
     const defTeam=ball.x<18?0:1;
-    const gk=state.players[defTeam*5];
+    const gk=state.players[defTeam*SLOT_N];
     const gkBoost=(state.tactics&&state.tactics.gk)||0;
     const saveChance=0.38+(gk.attrs.tackling/100)*0.22+gkBoost;
     if (gk&&Math.hypot(gk.x-ball.x,gk.y-ball.y)<14+gkBoost*10&&Math.random()<saveChance){
@@ -591,7 +683,7 @@ function resetKickoff(state,team){
   ball.x=FIELD_W/2; ball.y=FIELD_H/2; ball.vx=ball.vy=0;
   ball.owner=null; ball.passTarget=null;
   for (const p of state.players){
-    const slot=FORMATION[p.id%5];
+    const slot=(state.formations&&state.formations[p.team]||getFormation('4-4-2'))[p.id%SLOT_N];
     const fx=p.team===0?slot.x:1-slot.x;
     const drift=state.kickoffTeam===p.team?-0.08:0;
     p.x=clamp(fx+drift,0.02,0.98)*FIELD_W;
@@ -661,7 +753,7 @@ const view = {
   log: null,
   frameIndex: 0,
   playing: false,
-  speed: 1,
+  speed: 4,
   raf: null,
   lastTs: 0,
   acc: 0
@@ -671,10 +763,17 @@ const canvas = $('#pitch');
 const ctx = canvas.getContext('2d');
 
 function loadLog(log){
+  // stop any running playback before swapping logs
+  if (view.raf) cancelAnimationFrame(view.raf);
+  view.raf = null;
+  view.playing = false;
+  view.acc = 0;
+  view.lastTs = 0;
+
   view.log = log;
   view.frameIndex = 0;
-  view.playing = false;
   $('#btn-play').disabled = false;
+  $('#btn-full').disabled = false;
   $('#btn-pause').disabled = false;
   $('#btn-reset-view').disabled = false;
   $('#seek').disabled = false;
@@ -687,6 +786,20 @@ function loadLog(log){
   $('#sim-frames').textContent = log.frames.length.toLocaleString();
   $('#sim-events').textContent = log.events.length.toLocaleString();
   $('#sim-score').textContent = log.score[0] + ' - ' + log.score[1];
+  $('#final-score').textContent = log.score[0] + ' - ' + log.score[1];
+  $('#final-score').className = 'v good';
+
+  // reset progress UI cleanly
+  $('#timeline').querySelectorAll('.marker').forEach(m=>m.remove());
+  $('#timeline-progress').style.width = '0%';
+  $('#view-state').textContent = '완료 — 재생 대기';
+
+  // show final score on the scoreboard until playback starts
+  $('#view-score').textContent = log.score[0] + ' - ' + log.score[1];
+  $('#view-clock').textContent = '최종';
+  $('#view-time').textContent = '90:00 / 90:00';
+  $('#view-progress').textContent = '100%';
+  $('#view-owner').textContent = '—';
 
   // preview (truncated)
   const preview = {
@@ -751,6 +864,13 @@ function loadLog(log){
 
   $('#view-state').textContent = '준비됨';
   drawFrame();
+  // drawFrame renders the pitch at t=0 (running score 0-0) — restore the final result
+  $('#view-score').textContent = log.score[0] + ' - ' + log.score[1];
+  $('#view-clock').textContent = '최종';
+  $('#view-time').textContent = '90:00 / 90:00';
+  $('#view-progress').textContent = '100%';
+  $('#view-owner').textContent = '—';
+  $('#view-state').textContent = `완료 — 최종 ${log.score[0]} - ${log.score[1]}`;
 }
 
 function seekToTime(t){
@@ -795,11 +915,10 @@ function drawFrame(){
 
   // players
   positions.forEach((pos, i)=>{
-    const team = i < 5 ? 0 : 1;
-    const role = FORMATION[i%5].role;
+    const team = i < SLOT_N ? 0 : 1;
     const x = pos[0]*sx, y = pos[1]*sy;
     ctx.beginPath();
-    ctx.arc(x, y, role==='GK'?11:10, 0, Math.PI*2);
+    ctx.arc(x, y, (i%SLOT_N)===0?11:10, 0, Math.PI*2);
     ctx.fillStyle = team===0 ? '#3b82f6' : '#ef4444';
     if (owner===i){
       ctx.fillStyle = team===0 ? '#93c5fd' : '#fca5a5';
@@ -811,7 +930,7 @@ function drawFrame(){
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 9px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(String(i%5+1), x, y+3);
+    ctx.fillText(String(i%SLOT_N+1), x, y+3);
   });
 
   // ball
@@ -824,14 +943,17 @@ function drawFrame(){
   ctx.stroke();
 
   // HUD
-  $('#view-score').textContent = log.score[0] + ' - ' + log.score[1];
+  const rs = runningScore(t);
+  $('#view-score').textContent = rs[0] + ' - ' + rs[1];
   $('#view-clock').textContent = fmtClock(t);
-  $('#view-time').textContent = fmtClock(t);
+  $('#view-time').textContent = fmtClock(t) + ' / 90:00';
   $('#view-owner').textContent = owner>=0
-    ? (owner<5?'HOME':'AWAY') + ' #' + (owner%5+1)
+    ? (owner<SLOT_N?'HOME':'AWAY') + ' #' + (owner%SLOT_N+1)
     : '자유볼';
 
-  const pct = log.duration ? (t/log.duration*100) : 0;
+  const dur = log.duration || 5400;
+  const pct = dur ? (t/dur*100) : 0;
+  $('#view-progress').textContent = pct.toFixed(1) + '%';
   $('#timeline-progress').style.width = pct + '%';
   $('#seek').value = view.frameIndex;
   $('#seek-v').textContent = view.frameIndex;
@@ -882,13 +1004,24 @@ function drawPitchIdle(){
   $('#view-state').textContent = '로그 대기';
 }
 
+function runningScore(t){
+  const log = view.log;
+  if (!log) return [0,0];
+  const s = [0,0];
+  for (const e of log.events){
+    if (e.t > t) break;
+    if (e.type==='goal') s[e.team]++;
+  }
+  return s;
+}
+
 function play(){
   if (!view.log || !view.log.frames.length) return;
-  view.playing = true;
-  $('#view-state').textContent = '재생 중';
   if (view.frameIndex >= view.log.frames.length-1) view.frameIndex = 0;
-  view.lastTs = performance.now();
+  view.playing = true;
+  view.lastTs = 0; // let first rAF set the baseline
   view.acc = 0;
+  $('#view-state').textContent = '재생 중 ' + view.speed + '×';
   if (view.raf) cancelAnimationFrame(view.raf);
   view.raf = requestAnimationFrame(loop);
 }
@@ -896,32 +1029,189 @@ function play(){
 function pause(){
   view.playing = false;
   if (view.raf) cancelAnimationFrame(view.raf);
-  $('#view-state').textContent = '일시정지';
+  view.raf = null;
+  if (view.log) $('#view-state').textContent = '일시정지';
 }
 
 function loop(ts){
-  if (!view.playing) return;
-  const dt = Math.min(0.1, (ts - view.lastTs)/1000);
+  if (!view.playing || !view.log) return;
+
+  // first frame: just establish timestamp
+  if (!view.lastTs){
+    view.lastTs = ts;
+    view.raf = requestAnimationFrame(loop);
+    return;
+  }
+
+  let dt = (ts - view.lastTs) / 1000;
+  if (!isFinite(dt) || dt < 0) dt = 0;
+  dt = Math.min(dt, 0.25); // survive tab-switch / jank without skipping forever
   view.lastTs = ts;
 
-  // frames are 0.2s apart in sim time
-  const simSecondsPerFrame = TICK_DT * RECORD_EVERY;
+  const frameDur = TICK_DT * RECORD_EVERY; // 0.2 sim-seconds per logged frame
   view.acc += dt * view.speed;
-  const frameAdvance = view.acc / simSecondsPerFrame;
-  if (frameAdvance >= 1){
-    const stepN = Math.floor(frameAdvance);
-    view.acc -= stepN * simSecondsPerFrame;
-    view.frameIndex = Math.min(view.log.frames.length-1, view.frameIndex + stepN);
-    if (view.frameIndex >= view.log.frames.length-1){
-      drawFrame();
-      pause();
-      $('#view-state').textContent = '종료';
-      return;
-    }
+
+  const lastIndex = view.log.frames.length - 1;
+
+  // advance as many frames as time allows (never past the end)
+  while (view.acc >= frameDur && view.frameIndex < lastIndex){
+    view.frameIndex++;
+    view.acc -= frameDur;
   }
+
+  if (view.frameIndex >= lastIndex){
+    drawFrame();
+    pause();
+    $('#view-state').textContent = '종료 (90:00)';
+    return;
+  }
+
   drawFrame();
   view.raf = requestAnimationFrame(loop);
 }
+
+// ── roster: per-player params ──
+const ATTR_KEYS = ['pace','passing','shooting','tackling','vision','dribbling'];
+const ATTR_LABEL = { pace:'주력', passing:'패스', shooting:'슈팅', tackling:'태클', vision:'시야', dribbling:'드리블' };
+
+// generated baseline per player id (0-21); overrides only store edits
+let rosterBase = {};   // id -> { number, role, team, attrs }
+let rosterEdits = {};  // id -> partial attrs
+let rosterTeam = 0;
+let selectedPlayer = null;
+
+function buildRosterBase(){
+  // deterministic-ish baseline so the list is stable between renders
+  const formHome = getFormation($('#formation-home').value);
+  const formAway = getFormation($('#formation-away').value);
+  rosterBase = {};
+  for (let t=0;t<2;t++){
+    const form = t===0?formHome:formAway;
+    form.forEach((slot,i)=>{
+      const id = t*SLOT_N + i;
+      // simple hash from id for stable defaults
+      const h = (id*2654435761)>>>0;
+      const rnd = (n)=> (h >> n) & 255;
+      rosterBase[id] = {
+        id, team:t, number:i+1, role:slot.role,
+        attrs:{
+          pace: 55 + rnd(0)%40,
+          passing: 50 + rnd(3)%45,
+          shooting: 40 + rnd(6)%50,
+          tackling: 45 + rnd(9)%45,
+          vision: 50 + rnd(12)%45,
+          dribbling: 50 + rnd(15)%45
+        }
+      };
+    });
+  }
+}
+
+function effectiveAttrs(id){
+  const base = rosterBase[id];
+  if (!base) return null;
+  return Object.assign({}, base.attrs, rosterEdits[id]||{});
+}
+
+function renderRoster(){
+  buildRosterBase();
+  const box = $('#roster-list');
+  const rows = [];
+  for (let i=0;i<SLOT_N;i++){
+    const id = rosterTeam*SLOT_N + i;
+    const b = rosterBase[id];
+    const a = effectiveAttrs(id);
+    const edited = rosterEdits[id] ? ' · 편집됨' : '';
+    rows.push(`
+      <div class="action-card" data-pid="${id}" style="cursor:pointer;${selectedPlayer===id?'border-color:var(--accent)':''}">
+        <div class="top" style="margin-bottom:4px">
+          <div class="name">${rosterTeam===0?'HOME':'AWAY'} #${b.number} <span class="muted">${b.role}</span></div>
+          <div class="score" style="font-size:12px;color:var(--text2)">${edited||'기본'}</div>
+        </div>
+        <div class="muted" style="font-size:10px">
+          주력 ${Math.round(a.pace)} · 패스 ${Math.round(a.passing)} · 슈팅 ${Math.round(a.shooting)} ·
+          태클 ${Math.round(a.tackling)} · 시야 ${Math.round(a.vision)} · 드리블 ${Math.round(a.dribbling)}
+        </div>
+      </div>
+    `);
+  }
+  box.innerHTML = rows.join('');
+  box.querySelectorAll('[data-pid]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      selectedPlayer = parseInt(el.dataset.pid,10);
+      renderRoster();
+      renderPlayerEditor();
+    });
+  });
+  renderPlayerEditor();
+}
+
+function renderPlayerEditor(){
+  const box = $('#player-editor');
+  if (selectedPlayer==null || !rosterBase[selectedPlayer]){
+    box.innerHTML = '<div class="muted">선수를 클릭하면 개별 능력치를 조정할 수 있습니다.</div>';
+    return;
+  }
+  const id = selectedPlayer;
+  const b = rosterBase[id];
+  const a = effectiveAttrs(id);
+  box.innerHTML = `
+    <div class="panel" style="padding:12px">
+      <div class="flex-between" style="margin-bottom:8px">
+        <h2 style="font-size:13px">${b.team===0?'HOME':'AWAY'} #${b.number} · ${b.role} 개별 파라미터</h2>
+        <button class="btn secondary" id="btn-reset-player" style="padding:5px 10px">이 선수 초기화</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
+        ${ATTR_KEYS.map(k=>`
+          <div class="row">
+            <label>${ATTR_LABEL[k]}</label>
+            <input type="range" data-attr="${k}" min="10" max="100" step="1" value="${Math.round(a[k])}">
+            <div class="val">${Math.round(a[k])}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  box.querySelectorAll('input[data-attr]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const k = inp.dataset.attr;
+      const v = parseInt(inp.value,10);
+      if (!rosterEdits[id]) rosterEdits[id] = Object.assign({}, rosterBase[id].attrs);
+      rosterEdits[id][k] = v;
+      inp.nextElementSibling.textContent = v;
+      // refresh list numbers without full rebuild losing focus: just text
+      const card = $('#roster-list').querySelector(`[data-pid="${id}"] .muted`);
+      if (card){
+        const a2 = effectiveAttrs(id);
+        card.textContent = `주력 ${Math.round(a2.pace)} · 패스 ${Math.round(a2.passing)} · 슈팅 ${Math.round(a2.shooting)} · 태클 ${Math.round(a2.tackling)} · 시야 ${Math.round(a2.vision)} · 드리블 ${Math.round(a2.dribbling)}`;
+      }
+      const tag = $('#roster-list').querySelector(`[data-pid="${id}"] .score`);
+      if (tag) tag.textContent = '· 편집됨';
+    });
+  });
+  $('#btn-reset-player').addEventListener('click', ()=>{
+    delete rosterEdits[id];
+    renderRoster();
+  });
+}
+
+$('#roster-team-filter').addEventListener('click', e=>{
+  const btn = e.target.closest('.chip');
+  if (!btn) return;
+  $$('#roster-team-filter .chip').forEach(c=>c.classList.remove('active'));
+  btn.classList.add('active');
+  rosterTeam = parseInt(btn.dataset.team,10);
+  selectedPlayer = null;
+  renderRoster();
+});
+$('#btn-reset-roster').addEventListener('click', ()=>{
+  rosterEdits = {};
+  selectedPlayer = null;
+  renderRoster();
+});
+$('#formation-home').addEventListener('change', ()=>{ rosterEdits = {}; selectedPlayer=null; renderRoster(); });
+$('#formation-away').addEventListener('change', ()=>{ rosterEdits = {}; selectedPlayer=null; renderRoster(); });
+renderRoster();
 
 // ── sim controls ──
 $('#btn-sim').addEventListener('click', ()=>{
@@ -936,13 +1226,35 @@ $('#btn-sim').addEventListener('click', ()=>{
     gk: parseFloat($('#p-gk').value),
     pace: parseFloat($('#p-pace').value)
   };
+  const formationHome = $('#formation-home').value;
+  const formationAway = $('#formation-away').value;
+
+  // pass the roster the user sees — effective attrs for every player
+  const playerOverrides = {};
+  for (let t=0;t<2;t++){
+    for (let i=0;i<SLOT_N;i++){
+      const id = t*SLOT_N + i;
+      const a = effectiveAttrs(id);
+      if (a) playerOverrides[id] = Object.assign({}, a);
+    }
+  }
+
   $('#sim-status').textContent = '실행 중…';
   $('#sim-status').className = 'v warn';
   $('#log-preview').textContent = '시뮬레이션 중… (90분 = 54,000틱)';
-  // yield so UI can paint
+  // stop playback immediately so the progress bar cannot get stuck
+  if (view.raf) cancelAnimationFrame(view.raf);
+  view.raf = null;
+  view.playing = false;
+
   setTimeout(()=>{
     const t0 = performance.now();
-    const log = simulateMatch({ seed: Math.floor(Math.random()*1e9), homeAggro, awayAggro, tactics });
+    const log = simulateMatch({
+      seed: Math.floor(Math.random()*1e9),
+      homeAggro, awayAggro, tactics,
+      formationHome, formationAway,
+      playerOverrides
+    });
     const ms = Math.round(performance.now()-t0);
     loadLog(log);
     $('#sim-status').textContent = `${ms}ms 만에 완료`;
@@ -976,11 +1288,22 @@ function bindRange(id, onChange, format){
 
 // ── viewer controls ──
 $('#btn-play').addEventListener('click', play);
+$('#btn-full').addEventListener('click', ()=>{
+  if (!view.log) return;
+  // ~3 min wall clock for a full 90 min replay
+  view.speed = 30;
+  $$('[data-speed]').forEach(b=>{
+    b.classList.toggle('active', parseFloat(b.dataset.speed) === 30);
+  });
+  view.frameIndex = 0;
+  play();
+  $('#view-state').textContent = '90분 완주 중 30×';
+});
 $('#btn-pause').addEventListener('click', pause);
 $('#btn-reset-view').addEventListener('click', ()=>{
   view.frameIndex = 0;
   drawFrame();
-  $('#view-state').textContent = '처음으로';
+  $('#view-state').textContent = view.playing ? ('재생 중 ' + view.speed + '×') : '처음으로';
 });
 $('#seek').addEventListener('input', e=>{
   view.frameIndex = parseInt(e.target.value,10)||0;
