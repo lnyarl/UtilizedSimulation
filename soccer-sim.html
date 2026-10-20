@@ -88,15 +88,56 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
     </div>
   </div>
 
-  <div class="row">
-    <label>홈 공격성</label>
-    <input type="range" id="home-aggro" min="0.5" max="1.6" step="0.05" value="1">
-    <div class="val" id="home-aggro-v">1.0</div>
-  </div>
-  <div class="row">
-    <label>원정 공격성</label>
-    <input type="range" id="away-aggro" min="0.5" max="1.6" step="0.05" value="1">
-    <div class="val" id="away-aggro-v">1.0</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">
+    <div>
+      <div class="row">
+        <label>홈 공격성</label>
+        <input type="range" id="home-aggro" min="0.5" max="1.6" step="0.05" value="1">
+        <div class="val" id="home-aggro-v">1.0</div>
+      </div>
+      <div class="row">
+        <label>원정 공격성</label>
+        <input type="range" id="away-aggro" min="0.5" max="1.6" step="0.05" value="1">
+        <div class="val" id="away-aggro-v">1.0</div>
+      </div>
+      <div class="row">
+        <label>슈팅 성향</label>
+        <input type="range" id="p-shoot" min="0.3" max="2" step="0.05" value="1">
+        <div class="val" id="p-shoot-v">1.0</div>
+      </div>
+      <div class="row">
+        <label>패스 성향</label>
+        <input type="range" id="p-pass" min="0.3" max="2" step="0.05" value="1">
+        <div class="val" id="p-pass-v">1.0</div>
+      </div>
+    </div>
+    <div>
+      <div class="row">
+        <label>드리블 성향</label>
+        <input type="range" id="p-dribble" min="0.3" max="2" step="0.05" value="1">
+        <div class="val" id="p-dribble-v">1.0</div>
+      </div>
+      <div class="row">
+        <label>수비 집중</label>
+        <input type="range" id="p-tackle" min="0.3" max="2" step="0.05" value="1">
+        <div class="val" id="p-tackle-v">1.0</div>
+      </div>
+      <div class="row">
+        <label>라인 높이</label>
+        <input type="range" id="p-line" min="0" max="0.35" step="0.01" value="0.12">
+        <div class="val" id="p-line-v">0.12</div>
+      </div>
+      <div class="row">
+        <label>골키퍼</label>
+        <input type="range" id="p-gk" min="0" max="0.35" step="0.01" value="0.1">
+        <div class="val" id="p-gk-v">0.10</div>
+      </div>
+      <div class="row">
+        <label>주력</label>
+        <input type="range" id="p-pace" min="0.6" max="1.4" step="0.05" value="1">
+        <div class="val" id="p-pace-v">1.0</div>
+      </div>
+    </div>
   </div>
 
   <div class="stat-row" id="report-stats">
@@ -223,9 +264,10 @@ const FORMATION = [
   { role:'FW', x:0.58, y:0.68 }
 ];
 
-function makePlayer(id, team, slot, rng, aggro){
+function makePlayer(id, team, slot, rng, aggro, tac){
+  tac = tac||{};
   const attrs = {
-    pace: 55+rng()*35,
+    pace: (55+rng()*35)*(tac.pace||1),
     passing: 50+rng()*40,
     shooting: 40+rng()*45,
     tackling: 45+rng()*40,
@@ -238,10 +280,10 @@ function makePlayer(id, team, slot, rng, aggro){
     x: fx*FIELD_W, y: slot.y*FIELD_H, vx:0, vy:0,
     attrs, stamina:100,
     w: {
-      shoot: (slot.role==='FW'?1.3:slot.role==='GK'?0.1:0.7)*aggro,
-      pass: 1.0,
-      dribble: (slot.role==='FW'?1.2:0.9)*aggro,
-      tackle: (slot.role==='DF'?1.3:0.8),
+      shoot: (slot.role==='FW'?1.3:slot.role==='GK'?0.1:0.7)*aggro*(tac.shoot||1),
+      pass: 1.0*(tac.pass||1),
+      dribble: (slot.role==='FW'?1.2:0.9)*aggro*(tac.dribble||1),
+      tackle: (slot.role==='DF'?1.3:0.8)*(tac.tackle||1),
       position: 1.0
     },
     action: 'idle'
@@ -253,14 +295,18 @@ function createMatch(opts){
   const seed = opts.seed!=null ? opts.seed : (Date.now()%2147483647);
   const rng = mulberry32(seed);
   const homeAggro = opts.homeAggro||1, awayAggro = opts.awayAggro||1;
+  const tac = Object.assign({
+    shoot:1, pass:1, dribble:1, tackle:1,
+    line:0.12, gk:0.10, pace:1
+  }, opts.tactics||{});
   const players = [];
   for (let t=0;t<2;t++){
     FORMATION.forEach((slot,i)=>{
-      players.push(makePlayer(t*5+i, t, slot, rng, t===0?homeAggro:awayAggro));
+      players.push(makePlayer(t*5+i, t, slot, rng, t===0?homeAggro:awayAggro, tac));
     });
   }
   return {
-    seed, time:0, tick:0, score:[0,0], players,
+    seed, time:0, tick:0, score:[0,0], players, tactics:tac,
     ball:{ x:FIELD_W/2, y:FIELD_H/2, vx:0, vy:0, owner:null, passTarget:null },
     kickoffTeam:0,
     events:[],
@@ -270,7 +316,7 @@ function createMatch(opts){
         seed, tickDt:TICK_DT, recordEvery:RECORD_EVERY,
         matchSeconds:MATCH_SECONDS,
         field:{ w:FIELD_W, h:FIELD_H, goalW:GOAL_W },
-        teamSize:5, homeAggro, awayAggro
+        teamSize:5, homeAggro, awayAggro, tactics:tac
       },
       frames:[], events:[], score:[0,0], stats:null, duration:0
     }
@@ -392,12 +438,13 @@ function decideOffBall(state,p,teamHasBall,rng){
   }
   const slot=FORMATION[p.id%5];
   const fx=p.team===0?slot.x:1-slot.x;
-  const shift=((ball.x/FIELD_W)-0.5)*0.35;
+  const lineH=(state.tactics&&state.tactics.line!=null)?state.tactics.line:0.12;
+  const shift=((ball.x/FIELD_W)-0.5)*(0.20+lineH);
   let tx=clamp(fx+shift,0.03,0.97)*FIELD_W;
   let ty=slot.y*FIELD_H;
   if (p.role!=='GK'&&owner&&owner.team===p.team){
     const op=openness(state,p);
-    tx += (p.team===0?12:-12)*op;
+    tx += (p.team===0?12:-12)*op*(0.7+lineH*2);
     ty += (rng()-0.5)*8*op;
     tx=clamp(tx,2,FIELD_W-2); ty=clamp(ty,2,FIELD_H-2);
   }
@@ -502,7 +549,9 @@ function updateBall(state,dt){
   if (ball.x<18||ball.x>FIELD_W-18){
     const defTeam=ball.x<18?0:1;
     const gk=state.players[defTeam*5];
-    if (gk&&Math.hypot(gk.x-ball.x,gk.y-ball.y)<14&&Math.random()<0.42+(gk.attrs.tackling/100)*0.25){
+    const gkBoost=(state.tactics&&state.tactics.gk)||0;
+    const saveChance=0.38+(gk.attrs.tackling/100)*0.22+gkBoost;
+    if (gk&&Math.hypot(gk.x-ball.x,gk.y-ball.y)<14+gkBoost*10&&Math.random()<saveChance){
       ball.vx=-ball.vx*0.35; ball.vy+=(Math.random()-0.5)*8;
       ball.x=ball.x<18?12:FIELD_W-12;
       pushEvent(state,'save',{ team:defTeam, player:gk.id, x:r2(ball.x), y:r2(ball.y) });
@@ -878,13 +927,22 @@ function loop(ts){
 $('#btn-sim').addEventListener('click', ()=>{
   const homeAggro = parseFloat($('#home-aggro').value);
   const awayAggro = parseFloat($('#away-aggro').value);
+  const tactics = {
+    shoot: parseFloat($('#p-shoot').value),
+    pass: parseFloat($('#p-pass').value),
+    dribble: parseFloat($('#p-dribble').value),
+    tackle: parseFloat($('#p-tackle').value),
+    line: parseFloat($('#p-line').value),
+    gk: parseFloat($('#p-gk').value),
+    pace: parseFloat($('#p-pace').value)
+  };
   $('#sim-status').textContent = '실행 중…';
   $('#sim-status').className = 'v warn';
   $('#log-preview').textContent = '시뮬레이션 중… (90분 = 54,000틱)';
   // yield so UI can paint
   setTimeout(()=>{
     const t0 = performance.now();
-    const log = simulateMatch({ seed: Math.floor(Math.random()*1e9), homeAggro, awayAggro });
+    const log = simulateMatch({ seed: Math.floor(Math.random()*1e9), homeAggro, awayAggro, tactics });
     const ms = Math.round(performance.now()-t0);
     loadLog(log);
     $('#sim-status').textContent = `${ms}ms 만에 완료`;
@@ -897,6 +955,13 @@ $('#btn-seed').addEventListener('click', ()=>{
 
 bindRange('home-aggro', v=>{}, v=>v.toFixed(1));
 bindRange('away-aggro', v=>{}, v=>v.toFixed(1));
+bindRange('p-shoot', v=>{}, v=>v.toFixed(1));
+bindRange('p-pass', v=>{}, v=>v.toFixed(1));
+bindRange('p-dribble', v=>{}, v=>v.toFixed(1));
+bindRange('p-tackle', v=>{}, v=>v.toFixed(1));
+bindRange('p-line', v=>{}, v=>v.toFixed(2));
+bindRange('p-gk', v=>{}, v=>v.toFixed(2));
+bindRange('p-pace', v=>{}, v=>v.toFixed(1));
 
 function bindRange(id, onChange, format){
   const el = $('#'+id), out = $('#'+id+'-v');
