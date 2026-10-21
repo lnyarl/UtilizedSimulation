@@ -502,7 +502,7 @@ function createMatch(opts){
       ));
     });
   }
-  return {
+  const state = {
     seed, time:0, tick:0, score:[0,0], players, tactics:tac,
     formations:[formHome, formAway],
     ball:{ x:FIELD_W/2, y:FIELD_H/2, vx:0, vy:0, owner:null, passTarget:null, shot:false },
@@ -532,6 +532,10 @@ function createMatch(opts){
       frames:[], events:[], score:[0,0], stats:null, duration:0
     }
   };
+  // legal kickoff shape before any tick runs — frame 0 is a real kickoff
+  resetKickoff(state, 0);
+  recordFrame(state);
+  return state;
 }
 
 function recordFrame(state){
@@ -1102,9 +1106,11 @@ function resetKickoff(state,team){
     if (isSentOff(state,p)) continue;
     if (p.x<1) p.x=1; else if (p.x>FIELD_W-1) p.x=FIELD_W-1;
     if (p.y<1) p.y=1; else if (p.y>FIELD_H-1) p.y=FIELD_H-1;
-    const inOwn = p.team===0 ? p.x<MID+2 : p.x>MID-2;
-    if (!inOwn){
-      p.x = p.team===0 ? clamp(p.x, 1, MID-1) : clamp(p.x, MID+1, FIELD_W-1);
+    // strict own-half rule: only the kickoff taker may cross the stripe
+    const isTaker = (ball.owner===p.id);
+    if (!isTaker){
+      if (p.team===0 && p.x>MID-1) p.x=MID-1;
+      if (p.team===1 && p.x<MID+1) p.x=MID+1;
     }
   }
 
