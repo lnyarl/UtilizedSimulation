@@ -177,7 +177,12 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
           <input type="range" id="t-aggro" min="0.5" max="1.6" step="0.05" value="1">
           <div class="val" id="t-aggro-v">1.0</div>
         </div>
-        <div class="hint">공격성은 슛·드리블 효용을 키워 적극적으로 만듭니다.</div>
+        <div class="row">
+          <label>세트피스 참여</label>
+          <input type="range" id="t-set" min="0.2" max="1" step="0.05" value="0.7">
+          <div class="val" id="t-set-v">0.70</div>
+        </div>
+        <div class="hint">공격성은 슛·드리블 효용을 키워 적극적으로 만듭니다. 세트피스 참여는 코너/프리킥 때 박스에 들어오는 인원입니다.</div>
       </div>
       <div class="cfg-card">
         <h3>볼 플레이 성향</h3>
@@ -360,7 +365,7 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
 const FIELD_W = 105, FIELD_H = 68, GOAL_W = 14.64;
 const BOX_W = 16.5, BOX_H = 40.3, SIX_W = 5.5, SIX_H = 18.32;
 const PEN_X = 11, HALF_SECONDS = 2700;
-const TICK_DT = 0.5, MATCH_SECONDS = 5400, RECORD_EVERY = 2, DECIDE_EVERY = 3;
+const TICK_DT = 0.25, MATCH_SECONDS = 5400, RECORD_EVERY = 2, DECIDE_EVERY = 4;
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
@@ -471,7 +476,7 @@ function createMatch(opts){
     shootH:1, shootA:1, passH:1, passA:1, dribbleH:1, dribbleA:1, tackleH:1, tackleA:1,
     lineH:0.12, lineA:0.12, gk:0.10, pace:1,
     pressH:30, pressA:30, shapeH:0.7, shapeA:0.7,
-    markH:7, markA:7, widthH:0.24, widthA:0.24, space:1.5, drift:1.2
+    markH:7, markA:7, widthH:0.24, widthA:0.24, setH:0.7, setA:0.7, space:1.5, drift:1.2
   }, opts.tactics||{});
   // legacy single-value fallbacks
   if (opts.tactics){
@@ -890,7 +895,7 @@ function executeAction(state,p,decision){
     const d0=Math.sqrt(dx0*dx0+dy0*dy0)||1;
     const flight=d0/speed;
     // better vision leads the runner more accurately
-    const lead=flight*(0.55+vision*0.45);
+    const lead=flight*(0.72+vision*0.28);
     let tx=mate.x+mate.vx*lead;
     let ty=mate.y+mate.vy*lead;
     // spray: poor passers pull the ball off the ideal line
@@ -935,7 +940,7 @@ function updateBall(state,dt){
   }
 
   // sub-step the free ball so passes can be received mid-flight
-  const steps=10;
+  const steps=8;
   const sdt=dt/steps;
   for (let s=0;s<steps;s++){
     ball.x+=ball.vx*sdt; ball.y+=ball.vy*sdt;
@@ -972,7 +977,7 @@ function updateBall(state,dt){
       const dx=p.x-ball.x, dy=p.y-ball.y;
       const d2=dx*dx+dy*dy;
       const isTarget = ball.passTarget===p.id;
-      const reach = isTarget ? 3.2 : 1.7;
+      const reach = isTarget ? 3.6 : 1.8;
       if (d2<reach*reach){
         if (isTarget || speed<10 || d2<1.0){
           ball.owner=p.id; ball.vx=ball.vy=0; ball.shot=false;
@@ -1157,10 +1162,11 @@ function executeRestart(state){
     return;
   }
 
-  // throwIn / corner / goalKick / freeKick — give ball to nearest taker
+  // throwIn / corner / goalKick / freeKick
   let taker=null, bestD=1e18;
   for (const p of state.players){
-    if (p.team!==team || p.role==='GK' && r.type!=='goalKick') continue;
+    if (p.team!==team) continue;
+    if (p.role==='GK' && r.type!=='goalKick') continue;
     if (p.role==='GK' && r.type==='goalKick'){ taker=p; break; }
     const dx=p.x-ball.x, dy=p.y-ball.y, d2=dx*dx+dy*dy;
     if (d2<bestD){ bestD=d2; taker=p; }
@@ -1169,11 +1175,170 @@ function executeRestart(state){
     for (const p of state.players){ if (p.team===team){ taker=p; break; } }
   }
   if (taker){
-    taker.x=clamp(ball.x-0.8,1,FIELD_W-1);
-    taker.y=clamp(ball.y,1,FIELD_H-1);
+    taker.x=clamp(ball.x + (r.type==='corner'||r.type==='throw_in'?-1:0), 1, FIELD_W-1);
+    taker.y=clamp(ball.y, 1, FIELD_H-1);
     ball.owner=taker.id;
     state.lastTouch=taker.id;
+    taker.targetX=taker.x; taker.targetY=taker.y;
   }
+
+  // set-piece shape: how hard the team commits numbers forward
+  const sfx = team===0 ? 'H' : 'A';
+  const commit = state.tactics && state.tactics['set'+sfx]!=null ? state.tactics['set'+sfx] : 0.7;
+  const defSfx = team===0 ? 'A' : 'H';
+  const defCommit = state.tactics && state.tactics['set'+defSfx]!=null ? state.tactics['set'+defSfx] : 0.7;
+
+  if (r.type==='corner'){
+    // attacking direction: toward the goal the corner is taken at
+    const goalX = team===0 ? FIELD_W : 0;
+    const gx = goalX;
+    const boxX = team===0 ? FIELD_W-BOX_W : BOX_W;
+    // how many attackers pile into the box (2..5)
+    const pushN = Math.round(2 + commit*3);
+    // how many defenders mark in the box (2..5)
+    const markN = Math.round(2 + defCommit*3);
+    const attackers=[], defenders=[];
+    for (const p of state.players){
+      if (isSentOff(state,p)||p.role==='GK') continue;
+      if (p.id===(taker&&taker.id)) continue;
+      if (p.team===team) attackers.push(p);
+      else defenders.push(p);
+    }
+    // attackers: fan across the box, edge of 6-yard to penalty spot
+    attackers.forEach((p,i)=>{
+      if (i>=pushN){
+        // stay out for the short option / cutback
+        p.x = clamp(ball.x + (team===0?-22:22), 2, FIELD_W-2);
+        p.y = clamp(ball.y + (i%2?-20:20), 4, FIELD_H-4);
+      } else {
+        const t=(i+0.5)/pushN;
+        // inside the penalty box, fanning toward the goal
+        p.x = boxX + (team===0? 1:-1)*(2 + (i%2)*7);
+        p.y = (FIELD_H/2-GOAL_W/2) + GOAL_W*t;
+      }
+      p.targetX=p.x; p.targetY=p.y; p.vx=p.vy=0;
+    });
+    // defenders: mark attackers, keep one out for the clearance
+    defenders.forEach((p,i)=>{
+      if (i>=markN){
+        // edge of the box, ready to break
+        p.x = clamp(boxX + (team===0?-14:14), 2, FIELD_W-2);
+        p.y = clamp(FIELD_H/2 + (i%2?-22:22), 4, FIELD_H-4);
+      } else if (attackers[i]){
+        // goal-side of the attacker
+        const a=attackers[i];
+        p.x = a.x + (team===0? -2.2 : 2.2);
+        p.y = a.y + (i%2?1.2:-1.2);
+      } else {
+        p.x = boxX + (team===0?1:-1)*3;
+        p.y = FIELD_H/2 + (i%2?-12:12);
+      }
+      p.targetX=p.x; p.targetY=p.y; p.vx=p.vy=0;
+    });
+    // GK holds the line
+    const gk=state.players[team===0?SLOT_N:0];
+    if (gk){ gk.x = gx + (team===0? -2:2); gk.y=FIELD_H/2; }
+  }
+
+  if (r.type==='free_kick'){
+    const goalX = team===0 ? FIELD_W : 0;
+    const distToGoal = Math.abs(ball.x-goalX);
+    // only form a wall when the kick is in shooting range
+    if (distToGoal < 32){
+      const wallN = Math.round(2 + defCommit*2);
+      const wallY = FIELD_H/2 + (ball.y<FIELD_H/2 ? -1:1)*2;
+      const wallX = ball.x + (team===0? 1:-1)*Math.min(distToGoal*0.35, 9);
+      const wallTeam = 1-team;
+      const wallPlayers=[];
+      for (const p of state.players){
+        if (isSentOff(state,p)||p.role==='GK') continue;
+        if (p.team===wallTeam) wallPlayers.push(p);
+      }
+      wallPlayers.slice(0, wallN).forEach((p,i)=>{
+        p.x = wallX;
+        p.y = wallY + (i - (wallN-1)/2)*1.6;
+        p.targetX=p.x; p.targetY=p.y;
+      });
+      // remaining defenders mark
+      const rest=wallPlayers.slice(wallN);
+      rest.forEach((p,i)=>{
+        p.x = clamp(ball.x + (team===0? 8:-8), 2, FIELD_W-2);
+        p.y = 12 + i*7;
+        p.targetX=p.x; p.targetY=p.y;
+      });
+      // attackers crowd the box
+      const atkN=Math.round(2+commit*3);
+      const atk=[];
+      for (const p of state.players){
+        if (isSentOff(state,p)||p.role==='GK'||p.team!==team) continue;
+        if (taker && p.id===taker.id) continue;
+        atk.push(p);
+      }
+      atk.forEach((p,i)=>{
+        if (i<atkN){
+          p.x = goalX + (team===0?-1:1)*(10+ (i%3)*5);
+          p.y = 16 + i*9;
+        } else {
+          p.x = clamp(ball.x + (team===0?-12:12), 2, FIELD_W-2);
+          p.y = clamp(ball.y + (i%2?-14:14), 4, FIELD_H-4);
+        }
+        p.targetX=p.x; p.targetY=p.y;
+      });
+    }
+  }
+
+  if (r.type==='throw_in'){
+    // a couple of teammates come short to offer the throw
+    const mates=[];
+    for (const p of state.players){
+      if (p.team!==team||isSentOff(state,p)||p.role==='GK') continue;
+      if (taker && p.id===taker.id) continue;
+      mates.push(p);
+    }
+    mates.sort((a,b)=>{
+      const da=(a.x-ball.x)**2+(a.y-ball.y)**2;
+      const db=(b.x-ball.x)**2+(b.y-ball.y)**2;
+      return da-db;
+    });
+    mates.slice(0,2).forEach((p,i)=>{
+      p.x=clamp(ball.x + (team===0? 3:-3), 2, FIELD_W-2);
+      p.y=clamp(ball.y + (i? 6:-6), 4, FIELD_H-4);
+      p.targetX=p.x; p.targetY=p.y;
+    });
+    // nearest opponent presses the throw
+    const opps=[];
+    for (const p of state.players){
+      if (p.team===team||isSentOff(state,p)||p.role==='GK') continue;
+      opps.push(p);
+    }
+    opps.sort((a,b)=>{
+      const da=(a.x-ball.x)**2+(a.y-ball.y)**2;
+      const db=(b.x-ball.x)**2+(b.y-ball.y)**2;
+      return da-db;
+    });
+    if (opps[0]){
+      opps[0].x=clamp(ball.x + (team===0? 2.2:-2.2), 2, FIELD_W-2);
+      opps[0].y=clamp(ball.y, 4, FIELD_H-4);
+      opps[0].targetX=opps[0].x; opps[0].targetY=opps[0].y;
+    }
+  }
+
+  if (r.type==='goal_kick'){
+    // defenders split wide, attackers stay high
+    const gk=state.players[team===0?0:SLOT_N];
+    if (gk){ gk.x=clamp(ball.x, 2, FIELD_W-2); gk.y=clamp(ball.y, 2, FIELD_H-2); }
+    const backs=[];
+    for (const p of state.players){
+      if (p.team!==team||p.role!=='DF'||isSentOff(state,p)) continue;
+      backs.push(p);
+    }
+    backs.forEach((p,i)=>{
+      p.x = clamp(ball.x + (team===0? 6:-6), 2, FIELD_W-2);
+      p.y = 12 + i*((FIELD_H-24)/Math.max(1,backs.length-1||1));
+      p.targetX=p.x; p.targetY=p.y;
+    });
+  }
+
   state.phase='play';
 }
 
@@ -1917,11 +2082,11 @@ const ATTR_LABEL = { pace:'주력', passing:'패스', shooting:'슈팅', tacklin
 const teamTactics = [
   { // HOME
     formation:'4-4-2', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
-    line:0.12, press:30, shape:0.7, mark:7, width:0.24
+    line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7
   },
   { // AWAY
     formation:'4-3-3', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
-    line:0.12, press:30, shape:0.7, mark:7, width:0.24
+    line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7
   }
 ];
 const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10 };
@@ -1944,7 +2109,8 @@ function loadTeamForm(){
   const pairs = [
     ['t-aggro', t.aggro], ['t-shoot', t.shoot], ['t-pass', t.pass],
     ['t-dribble', t.dribble], ['t-tackle', t.tackle], ['t-line', t.line],
-    ['t-press', t.press], ['t-shape', t.shape], ['t-mark', t.mark], ['t-width', t.width]
+    ['t-press', t.press], ['t-shape', t.shape], ['t-mark', t.mark],
+    ['t-width', t.width], ['t-set', t.set]
   ];
   for (const [id, v] of pairs){
     const el = $('#'+id);
@@ -1972,7 +2138,8 @@ const TEAM_FIELDS = [
   ['t-press','press', v=>String(v)],
   ['t-shape','shape', v=>v.toFixed(2)],
   ['t-mark','mark', v=>v.toFixed(1)],
-  ['t-width','width', v=>v.toFixed(2)]
+  ['t-width','width', v=>v.toFixed(2)],
+  ['t-set','set', v=>v.toFixed(2)]
 ];
 for (const [id, key, fmt] of TEAM_FIELDS){
   $('#'+id).addEventListener('input', e=>{
@@ -2140,7 +2307,8 @@ $('#btn-sim').addEventListener('click', ()=>{
     pressH: teamTactics[0].press, pressA: teamTactics[1].press,
     shapeH: teamTactics[0].shape, shapeA: teamTactics[1].shape,
     markH: teamTactics[0].mark,   markA: teamTactics[1].mark,
-    widthH: teamTactics[0].width, widthA: teamTactics[1].width
+    widthH: teamTactics[0].width, widthA: teamTactics[1].width,
+    setH: teamTactics[0].set, setA: teamTactics[1].set
   };
   const homeAggro = teamTactics[0].aggro;
   const awayAggro = teamTactics[1].aggro;
