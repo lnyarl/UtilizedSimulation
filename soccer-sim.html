@@ -947,31 +947,97 @@ function placeRestart(state, type, x, y, team){
 
 function resetKickoff(state,team){
   const ball=state.ball;
-  ball.x=FIELD_W/2; ball.y=FIELD_H/2; ball.vx=ball.vy=0;
+  const MID=FIELD_W/2;
+  ball.x=MID; ball.y=FIELD_H/2; ball.vx=ball.vy=0;
   ball.owner=null; ball.passTarget=null; ball.shot=false;
+  state.kickoffTeam=team;
+
+  // 1) place each team in its own half, keeping formation depth
   for (const p of state.players){
     if (isSentOff(state,p)) continue;
     const slot=(state.formations&&state.formations[p.team]||getFormation('4-4-2'))[p.id%SLOT_N];
-    const fx=p.team===0?slot.x:1-slot.x;
-    const drift=state.kickoffTeam===p.team?-0.08:0;
-    p.x=clamp(fx+drift,0.02,0.98)*FIELD_W;
-    p.y=slot.y*FIELD_H; p.vx=p.vy=0;
+    // slot.x is depth from own goal (GK 0.04 .. FW 0.68), regardless of team
+    const depth = slot.x;
+    const t = clamp((depth - 0.04) / 0.72, 0, 1);
+    const nx = 0.03 + t * 0.43;
+    p.x = p.team===0 ? nx*FIELD_W : (1-nx)*FIELD_W;
+    p.y = clamp(slot.y, 0.08, 0.92) * FIELD_H;
+    p.vx=p.vy=0;
     p.stamina=clamp(p.stamina+8,0,100);
     p.targetX=null; p.targetY=null;
   }
-  state.kickoffTeam=team;
-  let best=null, bestD=Infinity;
+
+  // 2) kickoff taker stands over the ball; a partner supports nearby
+  let taker=null, partner=null;
   for (const p of state.players){
-    if (p.team!==team||p.role==='GK'||isSentOff(state,p)) continue;
-    const dx=p.x-ball.x, dy=p.y-ball.y, d2=dx*dx+dy*dy;
-    if (d2<bestD){ bestD=d2; best=p; }
+    if (p.team!==team || isSentOff(state,p) || p.role==='GK') continue;
+    if (!taker && p.role==='MF'){ taker=p; continue; }
+    if (!taker && p.role==='FW'){ taker=p; continue; }
+    if (!partner && p!==taker && p.role!=='DF'){ partner=p; }
   }
-  if (best){
-    ball.owner=best.id;
-    best.x=ball.x-(team===0?1.5:-1.5);
-    best.y=ball.y;
-    state.lastTouch=best.id;
+  if (!taker){
+    for (const p of state.players){
+      if (p.team===team && !isSentOff(state,p) && p.role!=='GK'){ taker=p; break; }
+    }
   }
+  if (taker){
+    taker.x = MID - (team===0?1.2:-1.2);
+    taker.y = FIELD_H/2;
+    ball.owner=taker.id;
+    state.lastTouch=taker.id;
+  }
+  if (partner){
+    partner.x = MID - (team===0?8:-8);
+    partner.y = FIELD_H/2 - 6;
+  }
+
+  // 3) opponents must stay outside the center circle (~10m from the ball)
+  for (const p of state.players){
+    if (p.team===team || p.role==='GK' || isSentOff(state,p)) continue;
+    const dx=p.x-MID, dy=p.y-FIELD_H/2;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if (d<10){
+      // push straight out to 10.5m, keeping them on their own side
+      const k=10.5/(d||1);
+      p.x=MID+dx*k;
+      p.y=FIELD_H/2+dy*k;
+      if (p.team===0 && p.x>MID-3) p.x=MID-3;
+      if (p.team===1 && p.x<MID+3) p.x=MID+3;
+      if (p.y<2) p.y=2; else if (p.y>FIELD_H-2) p.y=FIELD_H-2;
+    }
+  }
+
+  // 4) separation so nobody stacks
+  const minSep=1.6;
+  const players=state.players, n=players.length;
+  for (let pass=0;pass<3;pass++){
+    for (let i=0;i<n;i++){
+      const a=players[i];
+      if (isSentOff(state,a)) continue;
+      for (let j=i+1;j<n;j++){
+        const b=players[j];
+        if (isSentOff(state,b)) continue;
+        const dx=b.x-a.x, dy=b.y-a.y;
+        const d2=dx*dx+dy*dy;
+        if (d2>=minSep*minSep || d2<1e-6) continue;
+        const d=Math.sqrt(d2);
+        const push=(minSep-d)*0.5/d;
+        a.x-=dx*push; a.y-=dy*push;
+        b.x+=dx*push; b.y+=dy*push;
+      }
+    }
+  }
+  // keep everyone on the pitch and in the correct half (except the taker)
+  for (const p of state.players){
+    if (isSentOff(state,p)) continue;
+    if (p.x<1) p.x=1; else if (p.x>FIELD_W-1) p.x=FIELD_W-1;
+    if (p.y<1) p.y=1; else if (p.y>FIELD_H-1) p.y=FIELD_H-1;
+    const inOwn = p.team===0 ? p.x<MID+2 : p.x>MID-2;
+    if (!inOwn){
+      p.x = p.team===0 ? clamp(p.x, 1, MID-1) : clamp(p.x, MID+1, FIELD_W-1);
+    }
+  }
+
   state.phase='play';
 }
 
