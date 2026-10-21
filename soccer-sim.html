@@ -360,7 +360,7 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
 const FIELD_W = 105, FIELD_H = 68, GOAL_W = 14.64;
 const BOX_W = 16.5, BOX_H = 40.3, SIX_W = 5.5, SIX_H = 18.32;
 const PEN_X = 11, HALF_SECONDS = 2700;
-const TICK_DT = 1.0, MATCH_SECONDS = 5400, RECORD_EVERY = 1, DECIDE_EVERY = 2;
+const TICK_DT = 0.5, MATCH_SECONDS = 5400, RECORD_EVERY = 2, DECIDE_EVERY = 3;
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
 const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
@@ -935,7 +935,7 @@ function updateBall(state,dt){
   }
 
   // sub-step the free ball so passes can be received mid-flight
-  const steps=24;
+  const steps=10;
   const sdt=dt/steps;
   for (let s=0;s<steps;s++){
     ball.x+=ball.vx*sdt; ball.y+=ball.vy*sdt;
@@ -1251,16 +1251,20 @@ function isOffsidePos(state, p){
 }
 
 function defensiveLineX(state, againstTeam){
-  // second-last defender of the defending team (againstTeam is attacking)
+  // cached per tick — this is called for every off-ball agent
+  const key = 'line'+againstTeam;
+  if (state._lineTick===state.tick && state[key]!=null) return state[key];
   const defTeam=1-againstTeam;
   const xs=[];
   for (const q of state.players){
     if (q.team!==defTeam) continue;
     xs.push(q.x);
   }
-  if (!xs.length) return againstTeam===0 ? FIELD_W-20 : 20;
+  if (!xs.length){ state[key] = againstTeam===0 ? FIELD_W-20 : 20; return state[key]; }
   xs.sort((a,b)=> againstTeam===0 ? b-a : a-b);
-  return xs.length>=2 ? xs[1] : xs[0];
+  state._lineTick=state.tick;
+  state[key] = xs.length>=2 ? xs[1] : xs[0];
+  return state[key];
 }
 
 function handleBallOut(state){
