@@ -59,6 +59,25 @@ table.stats td:first-child{text-align:left;color:var(--text2)}
 .tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:999px;background:var(--chip);color:var(--text2)}
 .tag.ok{background:rgba(62,207,142,.15);color:var(--good)}
 .tag.bad{background:rgba(255,107,107,.15);color:var(--bad)}
+.scope-tabs{display:flex;gap:6px;margin:14px 0 12px;flex-wrap:wrap}
+.scope-tab{background:var(--bg3);border:1px solid var(--border);color:var(--text2);padding:8px 14px;border-radius:8px;font-size:12.5px;cursor:pointer}
+.scope-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.scope-tab .badge{font-size:10px;opacity:.75;margin-left:4px}
+.scope-panel{display:none}
+.scope-panel.active{display:block}
+.cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.cfg-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.cfg-card h3{font-size:11px;color:var(--text2);font-weight:600;letter-spacing:.02em;margin-bottom:2px;text-transform:uppercase}
+.cfg-card .hint{font-size:11px;color:var(--text2);opacity:.8;margin-top:6px;line-height:1.35}
+.cfg-card .row{margin-bottom:8px}
+.cfg-card .row:last-child{margin-bottom:0}
+.cfg-card .row label{flex:0 0 92px;font-size:11.5px}
+.team-toggle{display:flex;gap:6px;margin-bottom:12px}
+.team-toggle .chip{min-width:96px;text-align:center}
+.team-toggle .chip.home.active{background:#3b82f6;border-color:#3b82f6;color:#fff}
+.team-toggle .chip.away.active{background:#ef4444;border-color:#ef4444;color:#fff}
+select.param{flex:1;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px}
+.scope-desc{font-size:12px;color:var(--text2);margin:0 0 12px;padding:8px 10px;background:var(--bg3);border-radius:8px;border-left:3px solid var(--accent)}
 .json-box{background:#0c1018;border:1px solid var(--border);border-radius:8px;padding:8px;height:120px;overflow:auto;font-size:10px;font-family:ui-monospace,Menlo,monospace;color:#7fd1a8;white-space:pre}
 .timeline{position:relative;height:28px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin:10px 0;cursor:pointer;overflow:hidden}
 .timeline .marker{position:absolute;top:6px;width:2px;height:16px;background:rgba(255,179,71,.55);border-radius:2px}
@@ -88,107 +107,143 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 18px">
-    <div>
-      <div class="row">
-        <label>홈 포메이션</label>
-        <select id="formation-home" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px">
-          <option>4-4-2</option><option>4-3-3</option><option>3-5-2</option><option>5-3-2</option><option>4-2-3-1</option>
-        </select>
+  <div class="scope-tabs" id="scope-tabs">
+    <button class="scope-tab active" data-scope="match">⚙️ 경기 설정 <span class="badge">전체</span></button>
+    <button class="scope-tab" data-scope="team">📋 팀 전술 <span class="badge">HOME/AWAY</span></button>
+    <button class="scope-tab" data-scope="player">👤 선수 기량 <span class="badge">개인</span></button>
+  </div>
+
+  <!-- ── Match scope ── -->
+  <div class="scope-panel active" id="scope-match">
+    <div class="scope-desc">경기 전체에 적용됩니다. 양 팀 선수·규칙에 공통으로 반영됩니다.</div>
+    <div class="cfg-grid">
+      <div class="cfg-card">
+        <h3>경기 흐름</h3>
+        <div class="row">
+          <label>템포 (주력 배율)</label>
+          <input type="range" id="p-pace" min="0.6" max="1.4" step="0.05" value="1">
+          <div class="val" id="p-pace-v">1.0</div>
+        </div>
+        <div class="row">
+          <label>최소 간격</label>
+          <input type="range" id="p-space" min="0.6" max="2.8" step="0.1" value="1.5">
+          <div class="val" id="p-space-v">1.5</div>
+        </div>
+        <div class="row">
+          <label>잔동작</label>
+          <input type="range" id="p-drift" min="0" max="3" step="0.1" value="1.2">
+          <div class="val" id="p-drift-v">1.2</div>
+        </div>
+        <div class="hint">템포가 클수록 모든 선수가 빨리 달립니다. 최소 간격·잔동작은 시뮬/화면 표현에 관여합니다.</div>
       </div>
-      <div class="row">
-        <label>원정 포메이션</label>
-        <select id="formation-away" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px">
-          <option>4-4-2</option><option selected>4-3-3</option><option>3-5-2</option><option>5-3-2</option><option>4-2-3-1</option>
-        </select>
+      <div class="cfg-card">
+        <h3>경기 규칙</h3>
+        <div class="row">
+          <label>골키퍼 세이브</label>
+          <input type="range" id="p-gk" min="0" max="0.35" step="0.01" value="0.1">
+          <div class="val" id="p-gk-v">0.10</div>
+        </div>
+        <div class="hint">전체 GK 보너스입니다. 높일수록 슈팅 억제. 팀별 골키퍼 편차는 선수 기량에서 조정합니다.</div>
       </div>
-      <div class="row">
-        <label>홈 공격성</label>
-        <input type="range" id="home-aggro" min="0.5" max="1.6" step="0.05" value="1">
-        <div class="val" id="home-aggro-v">1.0</div>
-      </div>
-      <div class="row">
-        <label>원정 공격성</label>
-        <input type="range" id="away-aggro" min="0.5" max="1.6" step="0.05" value="1">
-        <div class="val" id="away-aggro-v">1.0</div>
-      </div>
-      <div class="row">
-        <label>슈팅 성향</label>
-        <input type="range" id="p-shoot" min="0.3" max="2" step="0.05" value="1">
-        <div class="val" id="p-shoot-v">1.0</div>
-      </div>
-      <div class="row">
-        <label>패스 성향</label>
-        <input type="range" id="p-pass" min="0.3" max="2" step="0.05" value="1">
-        <div class="val" id="p-pass-v">1.0</div>
-      </div>
-    </div>
-    <div>
-      <div class="row">
-        <label>드리블 성향</label>
-        <input type="range" id="p-dribble" min="0.3" max="2" step="0.05" value="1">
-        <div class="val" id="p-dribble-v">1.0</div>
-      </div>
-      <div class="row">
-        <label>수비 집중</label>
-        <input type="range" id="p-tackle" min="0.3" max="2" step="0.05" value="1">
-        <div class="val" id="p-tackle-v">1.0</div>
-      </div>
-      <div class="row">
-        <label>라인 높이</label>
-        <input type="range" id="p-line" min="0" max="0.35" step="0.01" value="0.12">
-        <div class="val" id="p-line-v">0.12</div>
-      </div>
-      <div class="row">
-        <label>골키퍼</label>
-        <input type="range" id="p-gk" min="0" max="0.35" step="0.01" value="0.1">
-        <div class="val" id="p-gk-v">0.10</div>
-      </div>
-      <div class="row">
-        <label>주력</label>
-        <input type="range" id="p-pace" min="0.6" max="1.4" step="0.05" value="1">
-        <div class="val" id="p-pace-v">1.0</div>
-      </div>
-      <div class="row">
-        <label>압박 반경</label>
-        <input type="range" id="p-press" min="12" max="40" step="1" value="30">
-        <div class="val" id="p-press-v">30</div>
-      </div>
-      <div class="row">
-        <label>형태 유지</label>
-        <input type="range" id="p-shape" min="0" max="1" step="0.05" value="0.7">
-        <div class="val" id="p-shape-v">0.70</div>
-      </div>
-    </div>
-    <div>
-      <div class="row">
-        <label>마킹 간격</label>
-        <input type="range" id="p-mark" min="2" max="14" step="0.5" value="7">
-        <div class="val" id="p-mark-v">7.0</div>
-      </div>
-      <div class="row">
-        <label>채널 폭</label>
-        <input type="range" id="p-width" min="0.12" max="0.38" step="0.01" value="0.24">
-        <div class="val" id="p-width-v">0.24</div>
-      </div>
-      <div class="row">
-        <label>최소 간격</label>
-        <input type="range" id="p-space" min="0.6" max="2.8" step="0.1" value="1.5">
-        <div class="val" id="p-space-v">1.5</div>
-      </div>
-      <div class="row">
-        <label>잔동작</label>
-        <input type="range" id="p-drift" min="0" max="3" step="0.1" value="1.2">
-        <div class="val" id="p-drift-v">1.2</div>
+      <div class="cfg-card">
+        <h3>시드</h3>
+        <div class="row">
+          <label>시드 변경</label>
+          <button class="btn secondary" id="btn-seed" style="flex:1">🎲 새 시드</button>
+        </div>
+        <div class="hint">같은 시드+같은 파라미터면 결과가 동일합니다.</div>
       </div>
     </div>
   </div>
 
-  <div class="mt">
+  <!-- ── Team tactics scope ── -->
+  <div class="scope-panel" id="scope-team">
+    <div class="scope-desc">팀 전술입니다. HOME/AWAY가 각각 다른 축구를 할 수 있습니다.</div>
+    <div class="team-toggle" id="team-toggle">
+      <button class="chip home active" data-team="0">HOME 파랑</button>
+      <button class="chip away" data-team="1">AWAY 빨강</button>
+    </div>
+    <div class="cfg-grid" id="team-cfg">
+      <div class="cfg-card">
+        <h3>전술 기조</h3>
+        <div class="row">
+          <label>포메이션</label>
+          <select class="param" id="t-formation">
+            <option>4-4-2</option><option>4-3-3</option><option>3-5-2</option><option>5-3-2</option><option>4-2-3-1</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>공격성</label>
+          <input type="range" id="t-aggro" min="0.5" max="1.6" step="0.05" value="1">
+          <div class="val" id="t-aggro-v">1.0</div>
+        </div>
+        <div class="hint">공격성은 슛·드리블 효용을 키워 적극적으로 만듭니다.</div>
+      </div>
+      <div class="cfg-card">
+        <h3>볼 플레이 성향</h3>
+        <div class="row">
+          <label>슈팅 성향</label>
+          <input type="range" id="t-shoot" min="0.3" max="2" step="0.05" value="1">
+          <div class="val" id="t-shoot-v">1.0</div>
+        </div>
+        <div class="row">
+          <label>패스 성향</label>
+          <input type="range" id="t-pass" min="0.3" max="2" step="0.05" value="1">
+          <div class="val" id="t-pass-v">1.0</div>
+        </div>
+        <div class="row">
+          <label>드리블 성향</label>
+          <input type="range" id="t-dribble" min="0.3" max="2" step="0.05" value="1">
+          <div class="val" id="t-dribble-v">1.0</div>
+        </div>
+        <div class="row">
+          <label>수비 집중</label>
+          <input type="range" id="t-tackle" min="0.3" max="2" step="0.05" value="1">
+          <div class="val" id="t-tackle-v">1.0</div>
+        </div>
+      </div>
+      <div class="cfg-card">
+        <h3>수비 블록</h3>
+        <div class="row">
+          <label>라인 높이</label>
+          <input type="range" id="t-line" min="0" max="0.35" step="0.01" value="0.12">
+          <div class="val" id="t-line-v">0.12</div>
+        </div>
+        <div class="row">
+          <label>압박 반경</label>
+          <input type="range" id="t-press" min="12" max="40" step="1" value="30">
+          <div class="val" id="t-press-v">30</div>
+        </div>
+        <div class="row">
+          <label>형태 유지</label>
+          <input type="range" id="t-shape" min="0" max="1" step="0.05" value="0.7">
+          <div class="val" id="t-shape-v">0.70</div>
+        </div>
+        <div class="row">
+          <label>마킹 간격</label>
+          <input type="range" id="t-mark" min="2" max="14" step="0.5" value="7">
+          <div class="val" id="t-mark-v">7.0</div>
+        </div>
+      </div>
+      <div class="cfg-card">
+        <h3>폭과 모양</h3>
+        <div class="row">
+          <label>채널 폭</label>
+          <input type="range" id="t-width" min="0.12" max="0.38" step="0.01" value="0.24">
+          <div class="val" id="t-width-v">0.24</div>
+        </div>
+        <div class="hint">라인 높이 = 팀이 얼마나 앞에서 플레이하는가.<br>압박 반경 = 가까운 선수 몇 명이 공을 쫓는가.<br>형태 유지 = 볼 워칭보다 대형 유지.<br>채널 폭 = 공격수의 좌우 폭.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Player scope ── -->
+  <div class="scope-panel" id="scope-player">
+    <div class="scope-desc">선수 개인 기량입니다. 같은 전술이라도 능력치에 따라 패스 성공률·마무리가 달라집니다.</div>
     <div class="flex-between" style="margin-bottom:8px">
       <div>
         <h2 style="font-size:13px">선수 로스터 (클릭해 개별 조정)</h2>
-        <div class="muted">각 선수는 주력·패스·슈팅·태클·시야·드리블 개별 능력치를 가집니다. 팀 전술 슬라이더와 곱해져 행동 효용이 결정됩니다.</div>
+        <div class="muted">주력·패스·슈팅·태클·시야·드리블 — 이 값이 팀 전술 가중치와 곱해져 행동 효용이 됩니다.</div>
       </div>
       <button class="btn secondary" id="btn-reset-roster">로스터 초기화</button>
     </div>
@@ -389,16 +444,17 @@ function makePlayer(id, team, slot, rng, aggro, tac, override){
   };
   const attrs = Object.assign(base, override||{});
   attrs.pace = attrs.pace * (tac.pace||1);
+  const sfx = team===0 ? 'H' : 'A';
   const fx = team===0 ? slot.x : 1-slot.x;
   return {
     id, team, role: slot.role, number: (id % SLOT_N) + 1,
     x: fx*FIELD_W, y: slot.y*FIELD_H, vx:0, vy:0,
     attrs, stamina:100,
     w: {
-      shoot: (slot.role==='FW'?1.3:slot.role==='GK'?0.1:slot.role==='MF'?0.9:0.6)*aggro*(tac.shoot||1),
-      pass: (slot.role==='MF'?1.15:1.0)*(tac.pass||1),
-      dribble: (slot.role==='FW'?1.2:slot.role==='MF'?1.0:0.8)*aggro*(tac.dribble||1),
-      tackle: (slot.role==='DF'?1.3:slot.role==='MF'?0.95:0.7)*(tac.tackle||1),
+      shoot: (slot.role==='FW'?1.3:slot.role==='GK'?0.1:slot.role==='MF'?0.9:0.6)*aggro*(tac['shoot'+sfx]!=null?tac['shoot'+sfx]:1),
+      pass: (slot.role==='MF'?1.15:1.0)*(tac['pass'+sfx]!=null?tac['pass'+sfx]:1),
+      dribble: (slot.role==='FW'?1.2:slot.role==='MF'?1.0:0.8)*aggro*(tac['dribble'+sfx]!=null?tac['dribble'+sfx]:1),
+      tackle: (slot.role==='DF'?1.3:slot.role==='MF'?0.95:0.7)*(tac['tackle'+sfx]!=null?tac['tackle'+sfx]:1),
       position: 1.0
     },
     action: 'idle',
@@ -412,10 +468,24 @@ function createMatch(opts){
   const rng = mulberry32(seed);
   const homeAggro = opts.homeAggro||1, awayAggro = opts.awayAggro||1;
   const tac = Object.assign({
-    shoot:1, pass:1, dribble:1, tackle:1,
-    line:0.12, gk:0.10, pace:1,
-    press:30, shape:0.7, mark:7, width:0.24, space:1.5, drift:1.2
+    shootH:1, shootA:1, passH:1, passA:1, dribbleH:1, dribbleA:1, tackleH:1, tackleA:1,
+    lineH:0.12, lineA:0.12, gk:0.10, pace:1,
+    pressH:30, pressA:30, shapeH:0.7, shapeA:0.7,
+    markH:7, markA:7, widthH:0.24, widthA:0.24, space:1.5, drift:1.2
   }, opts.tactics||{});
+  // legacy single-value fallbacks
+  if (opts.tactics){
+    const t=opts.tactics;
+    if (t.line!=null){ tac.lineH=t.line; tac.lineA=t.line; }
+    if (t.press!=null){ tac.pressH=t.press; tac.pressA=t.press; }
+    if (t.shape!=null){ tac.shapeH=t.shape; tac.shapeA=t.shape; }
+    if (t.shoot!=null){ tac.shootH=t.shoot; tac.shootA=t.shoot; }
+    if (t.pass!=null){ tac.passH=t.pass; tac.passA=t.pass; }
+    if (t.dribble!=null){ tac.dribbleH=t.dribble; tac.dribbleA=t.dribble; }
+    if (t.tackle!=null){ tac.tackleH=t.tackle; tac.tackleA=t.tackle; }
+    if (t.mark!=null){ tac.markH=t.mark; tac.markA=t.mark; }
+    if (t.width!=null){ tac.widthH=t.width; tac.widthA=t.width; }
+  }
   const formHome = getFormation(opts.formationHome);
   const formAway = getFormation(opts.formationAway);
   const overrides = opts.playerOverrides || {};
@@ -629,13 +699,13 @@ function decideOffBall(state,p,teamHasBall,rng){
   const form=(state.formations&&state.formations[team])||getFormation('4-4-2');
   const slot=form[p.id%SLOT_N];
   const fx=team===0?slot.x:1-slot.x;
-  const lineH=tac.line!=null?tac.line:0.12;
-  const shapeHold=tac.shape!=null?tac.shape:0.7;
-  const pressR=(tac.press!=null?tac.press:30);
+  const lineH=team===0 ? (tac.lineH!=null?tac.lineH:0.12) : (tac.lineA!=null?tac.lineA:0.12);
+  const shapeHold=team===0 ? (tac.shapeH!=null?tac.shapeH:0.7) : (tac.shapeA!=null?tac.shapeA:0.7);
+  const pressR=team===0 ? (tac.pressH!=null?tac.pressH:30) : (tac.pressA!=null?tac.pressA:30);
   const pressR2=pressR*pressR;
-  const markR=(tac.mark!=null?tac.mark:7);
-  const markR2=markR*markR*markR*markR*0.25; // generous band for "near"
-  const widthF=tac.width!=null?tac.width:0.24;
+  const markR=(team===0 ? (tac.markH!=null?tac.markH:7) : (tac.markA!=null?tac.markA:7));
+  const markR2=markR*markR*markR*markR*0.25;
+  const widthF=team===0 ? (tac.widthH!=null?tac.widthH:0.24) : (tac.widthA!=null?tac.widthA:0.24);
   const drift=tac.drift!=null?tac.drift:1.2;
 
   // home position: formation slot, shifted by ball (team block moves together)
@@ -1832,6 +1902,82 @@ function loop(ts){
 const ATTR_KEYS = ['pace','passing','shooting','tackling','vision','dribbling'];
 const ATTR_LABEL = { pace:'주력', passing:'패스', shooting:'슈팅', tackling:'태클', vision:'시야', dribbling:'드리블' };
 
+// ── parameter scopes ────────────────────────────────────────────
+// match: one per game · team: HOME/AWAY tactics · player: roster attrs
+const teamTactics = [
+  { // HOME
+    formation:'4-4-2', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
+    line:0.12, press:30, shape:0.7, mark:7, width:0.24
+  },
+  { // AWAY
+    formation:'4-3-3', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
+    line:0.12, press:30, shape:0.7, mark:7, width:0.24
+  }
+];
+const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10 };
+
+// scope tabs
+$('#scope-tabs').addEventListener('click', e=>{
+  const btn=e.target.closest('.scope-tab');
+  if (!btn) return;
+  $$('#scope-tabs .scope-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  $$('.scope-panel').forEach(p=>p.classList.remove('active'));
+  $('#scope-'+btn.dataset.scope).classList.add('active');
+});
+
+// team tactic editor
+let teamSel = 0;
+function loadTeamForm(){
+  const t = teamTactics[teamSel];
+  $('#t-formation').value = t.formation;
+  const pairs = [
+    ['t-aggro', t.aggro], ['t-shoot', t.shoot], ['t-pass', t.pass],
+    ['t-dribble', t.dribble], ['t-tackle', t.tackle], ['t-line', t.line],
+    ['t-press', t.press], ['t-shape', t.shape], ['t-mark', t.mark], ['t-width', t.width]
+  ];
+  for (const [id, v] of pairs){
+    const el = $('#'+id);
+    if (!el) continue;
+    el.value = v;
+    const out = $('#'+id+'-v');
+    if (out) out.textContent = typeof v==='number' && v%1!==0 ? v.toFixed(2) : String(v);
+  }
+}
+$('#team-toggle').addEventListener('click', e=>{
+  const btn=e.target.closest('.chip');
+  if (!btn) return;
+  $$('#team-toggle .chip').forEach(c=>c.classList.remove('active'));
+  btn.classList.add('active');
+  teamSel = parseInt(btn.dataset.team,10);
+  loadTeamForm();
+});
+const TEAM_FIELDS = [
+  ['t-aggro','aggro', v=>v.toFixed(1)],
+  ['t-shoot','shoot', v=>v.toFixed(1)],
+  ['t-pass','pass', v=>v.toFixed(1)],
+  ['t-dribble','dribble', v=>v.toFixed(1)],
+  ['t-tackle','tackle', v=>v.toFixed(1)],
+  ['t-line','line', v=>v.toFixed(2)],
+  ['t-press','press', v=>String(v)],
+  ['t-shape','shape', v=>v.toFixed(2)],
+  ['t-mark','mark', v=>v.toFixed(1)],
+  ['t-width','width', v=>v.toFixed(2)]
+];
+for (const [id, key, fmt] of TEAM_FIELDS){
+  $('#'+id).addEventListener('input', e=>{
+    const v=parseFloat(e.target.value);
+    teamTactics[teamSel][key]=v;
+    const out=$('#'+id+'-v');
+    if (out) out.textContent=fmt(v);
+  });
+}
+$('#t-formation').addEventListener('change', e=>{
+  teamTactics[teamSel].formation = e.target.value;
+  rosterEdits = {}; selectedPlayer=null; renderRoster();
+});
+loadTeamForm();
+
 // generated baseline per player id (0-21); overrides only store edits
 let rosterBase = {};   // id -> { number, role, team, attrs }
 let rosterEdits = {};  // id -> partial attrs
@@ -1839,15 +1985,13 @@ let rosterTeam = 0;
 let selectedPlayer = null;
 
 function buildRosterBase(){
-  // deterministic-ish baseline so the list is stable between renders
-  const formHome = getFormation($('#formation-home').value);
-  const formAway = getFormation($('#formation-away').value);
+  const formHome = getFormation(teamTactics[0].formation);
+  const formAway = getFormation(teamTactics[1].formation);
   rosterBase = {};
   for (let t=0;t<2;t++){
     const form = t===0?formHome:formAway;
     form.forEach((slot,i)=>{
       const id = t*SLOT_N + i;
-      // simple hash from id for stable defaults
       const h = (id*2654435761)>>>0;
       const rnd = (n)=> (h >> n) & 255;
       rosterBase[id] = {
@@ -1967,33 +2111,32 @@ $('#btn-reset-roster').addEventListener('click', ()=>{
   selectedPlayer = null;
   renderRoster();
 });
-$('#formation-home').addEventListener('change', ()=>{ rosterEdits = {}; selectedPlayer=null; renderRoster(); });
-$('#formation-away').addEventListener('change', ()=>{ rosterEdits = {}; selectedPlayer=null; renderRoster(); });
 renderRoster();
 
 // ── sim controls ──
 $('#btn-sim').addEventListener('click', ()=>{
-  const homeAggro = parseFloat($('#home-aggro').value);
-  const awayAggro = parseFloat($('#away-aggro').value);
   const tactics = {
-    shoot: parseFloat($('#p-shoot').value),
-    pass: parseFloat($('#p-pass').value),
-    dribble: parseFloat($('#p-dribble').value),
-    tackle: parseFloat($('#p-tackle').value),
-    line: parseFloat($('#p-line').value),
-    gk: parseFloat($('#p-gk').value),
-    pace: parseFloat($('#p-pace').value),
-    press: parseFloat($('#p-press').value),
-    shape: parseFloat($('#p-shape').value),
-    mark: parseFloat($('#p-mark').value),
-    width: parseFloat($('#p-width').value),
-    space: parseFloat($('#p-space').value),
-    drift: parseFloat($('#p-drift').value)
+    // match scope
+    pace: matchParams.pace,
+    space: matchParams.space,
+    drift: matchParams.drift,
+    gk: matchParams.gk,
+    // team scope → per-side
+    shootH: teamTactics[0].shoot, shootA: teamTactics[1].shoot,
+    passH: teamTactics[0].pass,   passA: teamTactics[1].pass,
+    dribbleH: teamTactics[0].dribble, dribbleA: teamTactics[1].dribble,
+    tackleH: teamTactics[0].tackle, tackleA: teamTactics[1].tackle,
+    lineH: teamTactics[0].line,   lineA: teamTactics[1].line,
+    pressH: teamTactics[0].press, pressA: teamTactics[1].press,
+    shapeH: teamTactics[0].shape, shapeA: teamTactics[1].shape,
+    markH: teamTactics[0].mark,   markA: teamTactics[1].mark,
+    widthH: teamTactics[0].width, widthA: teamTactics[1].width
   };
-  const formationHome = $('#formation-home').value;
-  const formationAway = $('#formation-away').value;
+  const homeAggro = teamTactics[0].aggro;
+  const awayAggro = teamTactics[1].aggro;
+  const formationHome = teamTactics[0].formation;
+  const formationAway = teamTactics[1].formation;
 
-  // pass the roster the user sees — effective attrs for every player
   const playerOverrides = {};
   for (let t=0;t<2;t++){
     for (let i=0;i<SLOT_N;i++){
@@ -2005,8 +2148,7 @@ $('#btn-sim').addEventListener('click', ()=>{
 
   $('#sim-status').textContent = '실행 중…';
   $('#sim-status').className = 'v warn';
-  $('#log-preview').textContent = '시뮬레이션 중… (90분 = 54,000틱)';
-  // stop playback immediately so the progress bar cannot get stuck
+  $('#log-preview').textContent = '시뮬레이션 중… (90분)';
   if (view.raf) cancelAnimationFrame(view.raf);
   view.raf = null;
   view.playing = false;
@@ -2029,21 +2171,11 @@ $('#btn-seed').addEventListener('click', ()=>{
   $('#sim-seed').textContent = 'seed=' + Math.floor(Math.random()*1e9);
 });
 
-bindRange('home-aggro', v=>{}, v=>v.toFixed(1));
-bindRange('away-aggro', v=>{}, v=>v.toFixed(1));
-bindRange('p-shoot', v=>{}, v=>v.toFixed(1));
-bindRange('p-pass', v=>{}, v=>v.toFixed(1));
-bindRange('p-dribble', v=>{}, v=>v.toFixed(1));
-bindRange('p-tackle', v=>{}, v=>v.toFixed(1));
-bindRange('p-line', v=>{}, v=>v.toFixed(2));
-bindRange('p-gk', v=>{}, v=>v.toFixed(2));
-bindRange('p-pace', v=>{}, v=>v.toFixed(1));
-bindRange('p-press', v=>{}, v=>String(v));
-bindRange('p-shape', v=>{}, v=>v.toFixed(2));
-bindRange('p-mark', v=>{}, v=>v.toFixed(1));
-bindRange('p-width', v=>{}, v=>v.toFixed(2));
-bindRange('p-space', v=>{}, v=>v.toFixed(1));
-bindRange('p-drift', v=>{}, v=>v.toFixed(1));
+// match-scope sliders
+bindRange('p-pace', v=>{ matchParams.pace=v; }, v=>v.toFixed(1));
+bindRange('p-space', v=>{ matchParams.space=v; }, v=>v.toFixed(1));
+bindRange('p-drift', v=>{ matchParams.drift=v; }, v=>v.toFixed(1));
+bindRange('p-gk', v=>{ matchParams.gk=v; }, v=>v.toFixed(2));
 
 function bindRange(id, onChange, format){
   const el = $('#'+id), out = $('#'+id+'-v');
