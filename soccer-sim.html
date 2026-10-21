@@ -556,7 +556,7 @@ function scorePass(state,p,mate){
     }
   }
   if (laneRisk>1) laneRisk=1;
-  let score=(open*0.40 + progress*0.25 + toGoal*0.20 + p.attrs.passing*0.001
+  let score=(open*0.40 + progress*0.25 + toGoal*0.20 + p.attrs.passing*0.0012 + p.attrs.vision*0.0009
     - laneRisk*0.35 - Math.min(1,d*0.02)*0.15) * p.w.pass;
   // imperfect offside awareness: the passer often fails to see the runner's position
   if (isOffsidePos(state,mate)){
@@ -808,13 +808,24 @@ function executeAction(state,p,decision){
       placeRestart(state,'free_kick', mate.x, mate.y, 1-p.team);
       return;
     }
-    const speed=12+(p.attrs.passing/100)*14;
+    // passer skill shapes accuracy: passing = weight/placement, vision = timing of the lead
+    const skill=p.attrs.passing*0.01;
+    const vision=p.attrs.vision*0.01;
+    const speed=12+skill*14;
     const dx0=mate.x-p.x, dy0=mate.y-p.y;
     const d0=Math.sqrt(dx0*dx0+dy0*dy0)||1;
-    // lead the receiver: aim where they will be when the ball arrives
     const flight=d0/speed;
-    const tx=mate.x+mate.vx*flight*0.85;
-    const ty=mate.y+mate.vy*flight*0.85;
+    // better vision leads the runner more accurately
+    const lead=flight*(0.55+vision*0.45);
+    let tx=mate.x+mate.vx*lead;
+    let ty=mate.y+mate.vy*lead;
+    // spray: poor passers pull the ball off the ideal line
+    const spray=(1-skill)*18 + (1-vision)*10;
+    if (spray>0.1){
+      const ang=Math.random()*Math.PI*2;
+      tx+=Math.cos(ang)*spray*0.35;
+      ty+=Math.sin(ang)*spray*0.35;
+    }
     const dx=tx-p.x, dy=ty-p.y, d=Math.sqrt(dx*dx+dy*dy)||1;
     ball.vx=(dx/d)*speed; ball.vy=(dy/d)*speed; ball.owner=null;
     ball.passTarget=mate.id;
@@ -850,7 +861,7 @@ function updateBall(state,dt){
   }
 
   // sub-step the free ball so passes can be received mid-flight
-  const steps=8;
+  const steps=24;
   const sdt=dt/steps;
   for (let s=0;s<steps;s++){
     ball.x+=ball.vx*sdt; ball.y+=ball.vy*sdt;
@@ -1556,19 +1567,35 @@ function drawFrame(){
   const sx = canvas.width / FIELD_W;
   const sy = canvas.height / FIELD_H;
 
+  // players
   for (let i=0;i<n;i++){
     const team = i < SLOT_N ? 0 : 1;
     const x = (fa[4+i*2] + (fb[4+i*2]-fa[4+i*2])*u) * sx;
     const y = (fa[5+i*2] + (fb[5+i*2]-fa[5+i*2])*u) * sy;
+    const isOwner = owner===i;
+
+    if (isOwner){
+      // glow ring — unmistakable ball carrier
+      ctx.beginPath();
+      ctx.arc(x, y, 17, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,214,10,0.28)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x, y, 15, 0, Math.PI*2);
+      ctx.strokeStyle = '#ffd60a';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
     ctx.beginPath();
-    ctx.arc(x, y, (i%SLOT_N)===0?11:10, 0, Math.PI*2);
+    ctx.arc(x, y, isOwner?12:10, 0, Math.PI*2);
     ctx.fillStyle = team===0 ? '#3b82f6' : '#ef4444';
-    if (owner===i){
-      ctx.fillStyle = team===0 ? '#93c5fd' : '#fca5a5';
+    if (isOwner){
+      ctx.fillStyle = team===0 ? '#60a5fa' : '#f87171';
     }
     ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = isOwner ? '#ffd60a' : '#fff';
+    ctx.lineWidth = isOwner ? 2.5 : 1.5;
     ctx.stroke();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 9px sans-serif';
@@ -1576,13 +1603,44 @@ function drawFrame(){
     ctx.fillText(String(i%SLOT_N+1), x, y+3);
   }
 
+  // ball: stick to the owner's feet so possession is obvious
+  let ballX = bx, ballY = by;
+  if (owner>=0 && owner<n){
+    ballX = (fa[4+owner*2] + (fb[4+owner*2]-fa[4+owner*2])*u);
+    ballY = (fa[5+owner*2] + (fb[5+owner*2]-fa[5+owner*2])*u);
+    // drop it at the feet (toward the bottom of the player)
+    ballY += 0.9;
+    // short link line from player to ball
+    const px = ballX*sx, py = (ballY-0.9)*sy;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(ballX*sx, ballY*sy);
+    ctx.strokeStyle = 'rgba(255,214,10,0.55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
   ctx.beginPath();
-  ctx.arc(bx*sx, by*sy, 5, 0, Math.PI*2);
+  ctx.arc(ballX*sx, ballY*sy, owner>=0?6:5.5, 0, Math.PI*2);
   ctx.fillStyle = '#fff';
   ctx.fill();
-  ctx.strokeStyle = '#222';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = owner>=0 ? '#ffd60a' : '#222';
+  ctx.lineWidth = owner>=0 ? 2.5 : 1;
   ctx.stroke();
+
+  // small BALL badge over the owner
+  if (owner>=0 && owner<n){
+    const ox = (fa[4+owner*2] + (fb[4+owner*2]-fa[4+owner*2])*u) * sx;
+    const oy = (fa[5+owner*2] + (fb[5+owner*2]-fa[5+owner*2])*u) * sy;
+    ctx.fillStyle = '#ffd60a';
+    ctx.beginPath();
+    ctx.arc(ox, oy-20, 7, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('●', ox, oy-17);
+  }
 
   const rs = runningScore(t);
   $('#view-score').textContent = rs[0] + ' - ' + rs[1];
