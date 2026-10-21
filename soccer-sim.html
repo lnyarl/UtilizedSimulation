@@ -150,7 +150,12 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
           <input type="range" id="p-pk" min="0" max="0.45" step="0.01" value="0.12">
           <div class="val" id="p-pk-v">0.12</div>
         </div>
-        <div class="hint">GK 세이브는 일반 슈팅, 페널티 세이브는 PK 전용입니다. 키커는 선수 기량(슈팅)이 높은 사람이 나갑니다.</div>
+        <div class="row">
+          <label>심판 성향</label>
+          <input type="range" id="p-ref" min="0.2" max="2" step="0.05" value="1">
+          <div class="val" id="p-ref-v">1.0</div>
+        </div>
+        <div class="hint">GK 세이브는 일반 슈팅, 페널티 세이브는 PK 전용입니다. 심판 성향이 높을수록 파울·카드가 잦습니다.</div>
       </div>
       <div class="cfg-card">
         <h3>시드</h3>
@@ -499,7 +504,9 @@ function createMatch(opts){
     lineH:0.12, lineA:0.12, gk:0.10, pace:1,
     pressH:30, pressA:30, shapeH:0.7, shapeA:0.7,
     markH:7, markA:7, widthH:0.24, widthA:0.24, setH:0.7, setA:0.7,
-    throwH:2, throwA:2, pk:0.12, space:1.5, drift:1.2
+    throwH:2, throwA:2, pk:0.12, ref:1,
+    distH:0.15, distA:0.15, candsH:5, candsA:5,
+    space:1.5, drift:1.2
   }, opts.tactics||{});
   // legacy single-value fallbacks
   if (opts.tactics){
@@ -658,8 +665,10 @@ function scorePass(state,p,mate){
     }
   }
   if (laneRisk>1) laneRisk=1;
+  const distPen = (state.tactics && (p.team===0 ? state.tactics.distH : state.tactics.distA));
+  const dPen = distPen!=null ? distPen : 0.15;
   let score=(open*0.40 + progress*0.25 + toGoal*0.20 + p.attrs.passing*0.0012 + p.attrs.vision*0.0009
-    - laneRisk*0.35 - Math.min(1,d*0.02)*0.15) * p.w.pass;
+    - laneRisk*0.35 - Math.min(1,d*0.02)*dPen) * p.w.pass;
   // imperfect offside awareness: the passer often fails to see the runner's position
   if (isOffsidePos(state,mate)){
     const fool = ((state.tick*13 + p.id*29 + mate.id*7) % 100) < 72;
@@ -680,21 +689,26 @@ const scoreHold = (state,p)=>(1-util.linear(pressureOn(state,p),1.2))*0.18*p.w.p
 function decideBallCarrier(state,p,rng){
   const options=[{ action:'shoot', score:scoreShoot(state,p), target:goalTarget(p.team) }];
   const players=state.players, n=players.length;
-  // consider at most 5 closest teammates
-  let best1=-1,best1d=1e9, best2=-1,best2d=1e9, best3=-1,best3d=1e9, best4=-1,best4d=1e9, best5=-1,best5d=1e9;
+  // consider the N closest teammates (N is a team tactic)
+  const wantN = state.tactics ? (p.team===0 ? (state.tactics.candsH||5) : (state.tactics.candsA||5)) : 5;
+  const candN = Math.max(3, Math.min(10, Math.round(wantN)));
+  const bestD=new Array(candN).fill(1e18);
+  const bestI=new Array(candN).fill(-1);
   for (let i=0;i<n;i++){
     const m=players[i];
     if (m.team!==p.team||m.id===p.id) continue;
     const dx=m.x-p.x, dy=m.y-p.y, d2=dx*dx+dy*dy;
-    if (d2<best1d){ best5=best4;best5d=best4d; best4=best3;best4d=best3d; best3=best2;best3d=best2d; best2=best1;best2d=best1d; best1=i;best1d=d2; }
-    else if (d2<best2d){ best5=best4;best5d=best4d; best4=best3;best4d=best3d; best3=best2;best3d=best2d; best2=i;best2d=d2; }
-    else if (d2<best3d){ best5=best4;best5d=best4d; best4=best3;best4d=best3d; best3=i;best3d=d2; }
-    else if (d2<best4d){ best5=best4;best5d=best4d; best4=i;best4d=d2; }
-    else if (d2<best5d){ best5=i;best5d=d2; }
+    // insert into top-N by distance
+    for (let k=0;k<candN;k++){
+      if (d2<bestD[k]){
+        for (let j=candN-1;j>k;j--){ bestD[j]=bestD[j-1]; bestI[j]=bestI[j-1]; }
+        bestD[k]=d2; bestI[k]=i;
+        break;
+      }
+    }
   }
-  const cand=[best1,best2,best3,best4,best5];
-  for (let c=0;c<5;c++){
-    const idx=cand[c];
+  for (let c=0;c<candN;c++){
+    const idx=bestI[c];
     if (idx<0) continue;
     const m=players[idx];
     let s=scorePass(state,p,m);
@@ -1434,6 +1448,8 @@ function tryFoul(state, tackler, carrier, rng){
   let foulChance = 0.015 + (behind?0.012:0) + Math.max(0, carrier.attrs.dribbling-tackler.attrs.tackling)*0.0004;
   if (foulChance<0.005) foulChance=0.005;
   if (foulChance>0.08) foulChance=0.08;
+  const ref = (state.tactics && state.tactics.ref) || 1;
+  foulChance *= ref;
   if (rng()>foulChance) return false;
 
   const team=tackler.team; // fouling team
@@ -1442,10 +1458,12 @@ function tryFoul(state, tackler, carrier, rng){
   state.stats.fouls[team]++;
   pushEvent(state,'foul',{ team, player:tackler.id, on:victim.id, x:r2(victim.x), y:r2(victim.y), penalty:inBox });
 
-  // card?
+  // card rates scale with referee strictness
   const cardRoll=rng();
-  if (inBox && cardRoll<0.04) giveCard(state, tackler, 'red');
-  else if (cardRoll<0.12) giveCard(state, tackler, 'yellow');
+  const redRate = (inBox ? 0.04 : 0.006) * ref;
+  const yellowRate = 0.12 * ref;
+  if (cardRoll < redRate) giveCard(state, tackler, 'red');
+  else if (cardRoll < redRate + yellowRate) giveCard(state, tackler, 'yellow');
 
   if (inBox){
     state.stats.penalties[victim.team]++;
@@ -2138,7 +2156,7 @@ const teamTactics = [
     dist:0.15, cands:5
   }
 ];
-const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10, pk:0.12 };
+const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10, pk:0.12, ref:1 };
 
 // scope tabs
 $('#scope-tabs').addEventListener('click', e=>{
@@ -2365,7 +2383,7 @@ $('#btn-sim').addEventListener('click', ()=>{
     throwH: teamTactics[0].throw, throwA: teamTactics[1].throw,
     distH: teamTactics[0].dist, distA: teamTactics[1].dist,
     candsH: teamTactics[0].cands, candsA: teamTactics[1].cands,
-    pk: matchParams.pk
+    pk: matchParams.pk, ref: matchParams.ref
   };
   const homeAggro = teamTactics[0].aggro;
   const awayAggro = teamTactics[1].aggro;
@@ -2412,6 +2430,7 @@ bindRange('p-space', v=>{ matchParams.space=v; }, v=>v.toFixed(1));
 bindRange('p-drift', v=>{ matchParams.drift=v; }, v=>v.toFixed(1));
 bindRange('p-gk', v=>{ matchParams.gk=v; }, v=>v.toFixed(2));
 bindRange('p-pk', v=>{ matchParams.pk=v; }, v=>v.toFixed(2));
+bindRange('p-ref', v=>{ matchParams.ref=v; }, v=>v.toFixed(1));
 
 function bindRange(id, onChange, format){
   const el = $('#'+id), out = $('#'+id+'-v');
