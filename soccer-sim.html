@@ -528,7 +528,7 @@ function scoreShoot(state,p){
   const pressure=pressureOn(state,p);
   const skill=p.attrs.shooting*0.01;
   const urgency=(state.time>4300&&state.score[p.team]<=state.score[1-p.team])?0.15:0;
-  return ((1-d*0.03125)*0.60*angle + skill*0.15 + (1-pressure*0.6666667)*0.15 + urgency) * p.w.shoot * 1.35;
+  return ((1-d*0.03125)*0.60*angle + skill*0.15 + (1-pressure*0.6666667)*0.15 + urgency) * p.w.shoot * 1.9;
 }
 
 function scorePass(state,p,mate){
@@ -558,9 +558,11 @@ function scorePass(state,p,mate){
   if (laneRisk>1) laneRisk=1;
   let score=(open*0.40 + progress*0.25 + toGoal*0.20 + p.attrs.passing*0.001
     - laneRisk*0.35 - Math.min(1,d*0.02)*0.15) * p.w.pass;
-  // offside: strikers are only sometimes aware — leaving them caught out
-  const unaware = ((state.tick*13 + mate.id*29) % 10) < 3;
-  if (isOffsidePos(state,mate) && !unaware) score -= 0.6;
+  // imperfect offside awareness: the passer often fails to see the runner's position
+  if (isOffsidePos(state,mate)){
+    const fool = ((state.tick*13 + p.id*29 + mate.id*7) % 100) < 72;
+    if (!fool) score -= 0.12;
+  }
   return score;
 }
 
@@ -595,7 +597,7 @@ function decideBallCarrier(state,p,rng){
     const m=players[idx];
     let s=scorePass(state,p,m);
     // tempted by the in-behind run — this is how offside happens
-    if (s>0 && m.runBehind) s += 0.75;
+    if (s>0 && m.runBehind) s += 0.45;
     if (s>0) options.push({ action:'pass', score:s, mate:m.id, target:null });
   }
   options.push({ action:'dribble', score:scoreDribble(state,p), target:goalTarget(p.team) });
@@ -607,7 +609,7 @@ function decideBallCarrier(state,p,rng){
     if (s>bestS){ bestS=s; best=i; }
   }
   const pick=options[best];
-  if (pick.action==='shoot'&&pick.score<0.12){
+  if (pick.action==='shoot'&&pick.score<0.08){
     for (let i=0;i<options.length;i++){
       if (options[i].action==='pass'||options[i].action==='dribble'){
         if (options[i].score>0) return options[i];
@@ -701,16 +703,32 @@ function decideOffBall(state,p,teamHasBall,rng){
     if (hy<3) hy=3; else if (hy>FIELD_H-3) hy=FIELD_H-3;
   }
 
-  // offside awareness: hold the line, but strikers sometimes run in behind
+  // offside: runners time their burst imperfectly (real players get caught ~2-4x / game)
   if (teamHasBall && p.role!=='GK'){
     const lineX = defensiveLineX(state, team);
-    const runIn = ((state.tick*17 + p.id*31) % 100) < 22 && p.role!=='DF';
-    p.runBehind = runIn ? 1 : 0;
+    // aim to arrive just onside, with timing error that sometimes gets them caught
+    const rand = (((state.tick*17 + p.id*31) % 1000) / 1000) - 0.5;
+    const vision = p.attrs.vision * 0.01;
+    const err = rand * (5.0 - vision*1.8);
+    const runIn = p.role!=='DF' && (ballD2<3600) && (
+      ((state.tick*17 + p.id*31) % 100) < 68
+    );
     if (runIn){
-      const depth = 6 + (p.id%8);
-      hx = team===0 ? lineX + depth : lineX - depth;
-      if (hx<2) hx=2; else if (hx>FIELD_W-2) hx=FIELD_W-2;
+      // commit to a run target for several ticks so the player can arrive
+      // past the line (the line itself drifts with the defensive block)
+      if (!p.runTicks || p.runTicks<=0){
+        p.runTicks = 5;
+        // burst clearly behind the line — a fraction of these will be offside
+        p.runX = lineX + (team===0 ? 1 : -1) * (1.2 + err*0.8);
+        p.runY = hy;
+      }
+      p.runTicks--;
+      hx = p.runX;
+      hy = p.runY;
+      p.runBehind = 1;
     } else {
+      p.runTicks = 0;
+      p.runBehind = 0;
       if (team===0 && hx > lineX-1.2) hx = lineX-1.2;
       if (team===1 && hx < lineX+1.2) hx = lineX+1.2;
     }
@@ -790,9 +808,14 @@ function executeAction(state,p,decision){
       placeRestart(state,'free_kick', mate.x, mate.y, 1-p.team);
       return;
     }
-    const tx=mate.x+mate.vx*0.25, ty=mate.y+mate.vy*0.25;
-    const speed=10+(p.attrs.passing/100)*12;
-    const dx=tx-p.x, dy=ty-p.y, d=Math.hypot(dx,dy)||1;
+    const speed=12+(p.attrs.passing/100)*14;
+    const dx0=mate.x-p.x, dy0=mate.y-p.y;
+    const d0=Math.sqrt(dx0*dx0+dy0*dy0)||1;
+    // lead the receiver: aim where they will be when the ball arrives
+    const flight=d0/speed;
+    const tx=mate.x+mate.vx*flight*0.85;
+    const ty=mate.y+mate.vy*flight*0.85;
+    const dx=tx-p.x, dy=ty-p.y, d=Math.sqrt(dx*dx+dy*dy)||1;
     ball.vx=(dx/d)*speed; ball.vy=(dy/d)*speed; ball.owner=null;
     ball.passTarget=mate.id;
     state.stats.passes[p.team]++;
@@ -825,48 +848,54 @@ function updateBall(state,dt){
     }
     return;
   }
-  ball.x+=ball.vx*dt; ball.y+=ball.vy*dt;
-  ball.vx*=0.985; ball.vy*=0.985;
 
-  const goalTop=FIELD_H/2-GOAL_W/2, goalBot=FIELD_H/2+GOAL_W/2;
-  // GK save when ball is shot toward goal
-  if (ball.shot && (ball.x<20||ball.x>FIELD_W-20)){
-    const defTeam=ball.x<20?0:1;
-    const gk=state.players[defTeam*SLOT_N];
-    if (gk && !isSentOff(state,gk)){
-      const gkBoost=(state.tactics&&state.tactics.gk)||0;
-      const saveChance=0.42+(gk.attrs.tackling/100)*0.25+gkBoost;
-      const gdx=gk.x-ball.x, gdy=gk.y-ball.y;
-      if (gdx*gdx+gdy*gdy<(14+gkBoost*10)*(14+gkBoost*10)&&Math.random()<saveChance){
-        ball.vx=-ball.vx*0.35; ball.vy+=(Math.random()-0.5)*8;
-        ball.x=ball.x<20?12:FIELD_W-12;
-        ball.shot=false;
-        state.lastTouch=gk.id;
-        pushEvent(state,'save',{ team:defTeam, player:gk.id, x:r2(ball.x), y:r2(ball.y) });
-        return;
+  // sub-step the free ball so passes can be received mid-flight
+  const steps=8;
+  const sdt=dt/steps;
+  for (let s=0;s<steps;s++){
+    ball.x+=ball.vx*sdt; ball.y+=ball.vy*sdt;
+    ball.vx*=0.995; ball.vy*=0.995;
+
+    const goalTop=FIELD_H/2-GOAL_W/2, goalBot=FIELD_H/2+GOAL_W/2;
+    if (ball.shot && (ball.x<20||ball.x>FIELD_W-20)){
+      const defTeam=ball.x<20?0:1;
+      const gk=state.players[defTeam*SLOT_N];
+      if (gk && !isSentOff(state,gk)){
+        const gkBoost=(state.tactics&&state.tactics.gk)||0;
+        const saveChance=0.42+(gk.attrs.tackling/100)*0.25+gkBoost;
+        const gdx=gk.x-ball.x, gdy=gk.y-ball.y;
+        if (gdx*gdx+gdy*gdy<(14+gkBoost*10)*(14+gkBoost*10)&&Math.random()<saveChance){
+          ball.vx=-ball.vx*0.35; ball.vy+=(Math.random()-0.5)*8;
+          ball.x=ball.x<20?12:FIELD_W-12;
+          ball.shot=false;
+          state.lastTouch=gk.id;
+          pushEvent(state,'save',{ team:defTeam, player:gk.id, x:r2(ball.x), y:r2(ball.y) });
+          return;
+        }
       }
     }
-  }
 
-  // goal / out of play
-  if (ball.x<=0.4 || ball.x>=FIELD_W-0.4 || ball.y<=0.4 || ball.y>=FIELD_H-0.4){
-    handleBallOut(state);
-    return;
-  }
+    if (ball.x<=0.4 || ball.x>=FIELD_W-0.4 || ball.y<=0.4 || ball.y>=FIELD_H-0.4){
+      handleBallOut(state);
+      return;
+    }
 
-  // pickup
-  const speed=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
-  for (const p of state.players){
-    if (isSentOff(state,p)) continue;
-    const dx=p.x-ball.x, dy=p.y-ball.y;
-    const d2=dx*dx+dy*dy;
-    if (d2<1.96 && speed<14){
-      if (ball.passTarget===p.id||speed<6||d2<0.81){
-        ball.owner=p.id; ball.vx=ball.vy=0; ball.shot=false;
-        state.lastTouch=p.id;
-        if (ball.passTarget===p.id) pushEvent(state,'receive',{ team:p.team, player:p.id });
-        ball.passTarget=null;
-        break;
+    // pickup during flight
+    const speed=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
+    for (const p of state.players){
+      if (isSentOff(state,p)) continue;
+      const dx=p.x-ball.x, dy=p.y-ball.y;
+      const d2=dx*dx+dy*dy;
+      const isTarget = ball.passTarget===p.id;
+      const reach = isTarget ? 3.2 : 1.7;
+      if (d2<reach*reach){
+        if (isTarget || speed<10 || d2<1.0){
+          ball.owner=p.id; ball.vx=ball.vy=0; ball.shot=false;
+          state.lastTouch=p.id;
+          if (isTarget) pushEvent(state,'receive',{ team:p.team, player:p.id });
+          ball.passTarget=null;
+          return;
+        }
       }
     }
   }
@@ -1048,7 +1077,7 @@ function tryFoul(state, tackler, carrier, rng){
 
 function checkOffside(state, passer, mate){
   const dir = passer.team===0 ? 1 : -1;
-  if ((mate.x-passer.x)*dir <= 0.5) return false; // not a forward pass
+  if ((mate.x-passer.x)*dir <= 0.5) return false;
   return isOffsidePos(state, mate);
 }
 
@@ -1198,6 +1227,10 @@ function step(state,rng){
     let decision;
     if (isCarrier){
       decision=decideBallCarrier(state,p,rng);
+    } else if (state.ball.passTarget===p.id && state.ball.owner==null){
+      // come to the ball — meet the pass
+      _tgt.x=state.ball.x; _tgt.y=state.ball.y;
+      decision={ action:'support', target:_tgt };
     } else if (p.role==='GK'){
       decision=decideGK(state,p);
     } else if (decideNow || p.targetX==null){
