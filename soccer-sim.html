@@ -155,7 +155,22 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
           <input type="range" id="p-ref" min="0.2" max="2" step="0.05" value="1">
           <div class="val" id="p-ref-v">1.0</div>
         </div>
-        <div class="hint">GK 세이브는 일반 슈팅, 페널티 세이브는 PK 전용입니다. 심판 성향이 높을수록 파울·카드가 잦습니다.</div>
+        <div class="row">
+          <label>슈팅 정확도</label>
+          <input type="range" id="p-acc" min="0.4" max="1.8" step="0.05" value="1">
+          <div class="val" id="p-acc-v">1.0</div>
+        </div>
+        <div class="row">
+          <label>태클 성공률</label>
+          <input type="range" id="p-tackle-rate" min="0.3" max="2.5" step="0.05" value="1">
+          <div class="val" id="p-tackle-rate-v">1.0</div>
+        </div>
+        <div class="row">
+          <label>스톱페이지(분)</label>
+          <input type="range" id="p-stoppage" min="0" max="8" step="1" value="5">
+          <div class="val" id="p-stoppage-v">5</div>
+        </div>
+        <div class="hint">심판이 파울·카드를 얼마나 잡아내는지, 슈팅이 골대에 맞는지, 태클이 성공하는지, 추가시간을 얼마나 주는지를 조정합니다.</div>
       </div>
       <div class="cfg-card">
         <h3>시드</h3>
@@ -232,6 +247,16 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
           <label>패스 후보</label>
           <input type="range" id="t-cands" min="3" max="10" step="1" value="5">
           <div class="val" id="t-cands-v">5</div>
+        </div>
+        <div class="row">
+          <label>침투 빈도</label>
+          <input type="range" id="t-run" min="0.1" max="1" step="0.05" value="0.55">
+          <div class="val" id="t-run-v">0.55</div>
+        </div>
+        <div class="row">
+          <label>오프사이드 인식</label>
+          <input type="range" id="t-offiq" min="0" max="1" step="0.05" value="0.5">
+          <div class="val" id="t-offiq-v">0.50</div>
         </div>
       </div>
       <div class="cfg-card">
@@ -506,6 +531,8 @@ function createMatch(opts){
     markH:7, markA:7, widthH:0.24, widthA:0.24, setH:0.7, setA:0.7,
     throwH:2, throwA:2, pk:0.12, ref:1,
     distH:0.15, distA:0.15, candsH:5, candsA:5,
+    runH:0.55, runA:0.55, offiqH:0.5, offiqA:0.5,
+    acc:1, tackleRate:1, stoppage:5,
     space:1.5, drift:1.2
   }, opts.tactics||{});
   // legacy single-value fallbacks
@@ -671,8 +698,9 @@ function scorePass(state,p,mate){
     - laneRisk*0.35 - Math.min(1,d*0.02)*dPen) * p.w.pass;
   // imperfect offside awareness: the passer often fails to see the runner's position
   if (isOffsidePos(state,mate)){
-    const fool = ((state.tick*13 + p.id*29 + mate.id*7) % 100) < 72;
-    if (!fool) score -= 0.12;
+    const offiq = state.tactics ? (p.team===0 ? (state.tactics.offiqH!=null?state.tactics.offiqH:0.5) : (state.tactics.offiqA!=null?state.tactics.offiqA:0.5)) : 0.5;
+    const seesIt = ((state.tick*13 + p.id*29 + mate.id*7) % 100) < offiq*100;
+    if (seesIt) score -= 0.35;
   }
   return score;
 }
@@ -826,8 +854,9 @@ function decideOffBall(state,p,teamHasBall,rng){
     const rand = (((state.tick*17 + p.id*31) % 1000) / 1000) - 0.5;
     const vision = p.attrs.vision * 0.01;
     const err = rand * (5.0 - vision*1.8);
+    const runRate=(team===0 ? (tac.runH!=null?tac.runH:0.55) : (tac.runA!=null?tac.runA:0.55));
     const runIn = p.role!=='DF' && (ballD2<3600) && (
-      ((state.tick*17 + p.id*31) % 100) < 68
+      ((state.tick*17 + p.id*31) % 100) < runRate*100
     );
     if (runIn){
       // commit to a run target for several ticks so the player can arrive
@@ -901,7 +930,9 @@ function executeAction(state,p,decision){
     // accuracy: wide spread + chance to miss the frame entirely
     const spread=(1-skill)*16+8;
     const ty=g.y+(Math.random()-0.5)*spread*2;
-    const missChance=clamp(0.22+(d/34)*0.30-skill*0.16,0.08,0.55);
+    const acc=(state.tactics&&state.tactics.acc)!=null?state.tactics.acc:1;
+    // higher acc → lower miss chance
+    const missChance=clamp((0.22+(d/34)*0.30-skill*0.16)/acc,0.05,0.85);
     const speed=18+skill*8;
     const dx=g.x-p.x, dy=ty-p.y, dd=Math.hypot(dx,dy)||1;
     if (Math.random()<missChance){
@@ -1563,7 +1594,7 @@ function step(state,rng){
     if (state.half===1){
       // halftime: swap sides conceptually (keep attacking dirs), reset positions
       state.half=2;
-      state.stoppage = 1 + Math.floor(rng()*5); // 1-5 min
+      state.stoppage = Math.floor((state.tactics&&state.tactics.stoppage!=null?state.tactics.stoppage:5) * rng());
       pushEvent(state,'halftime',{ score:[state.score[0],state.score[1]] });
       resetKickoff(state,1);
       state.phase='play';
@@ -1618,7 +1649,8 @@ function step(state,rng){
       }
       const chance=((p.attrs.tackling*0.01)*0.35-(carrier.attrs.dribbling*0.01)*0.28+0.10);
       const c=chance<0.03?0.03:chance>0.40?0.40:chance;
-      if (rng()<c*0.18){
+      const tRate=(state.tactics&&state.tactics.tackleRate)!=null?state.tactics.tackleRate:1;
+      if (rng()<c*0.18*tRate){
         state.ball.owner=p.id; state.ball.vx=state.ball.vy=0;
         state.ball.shot=false;
         state.lastTouch=p.id;
@@ -2148,15 +2180,15 @@ const teamTactics = [
   { // HOME
     formation:'4-4-2', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
     line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7, throw:2,
-    dist:0.15, cands:5
+    dist:0.15, cands:5, run:0.55, offiq:0.5
   },
   { // AWAY
     formation:'4-3-3', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
     line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7, throw:2,
-    dist:0.15, cands:5
+    dist:0.15, cands:5, run:0.55, offiq:0.5
   }
 ];
-const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10, pk:0.12, ref:1 };
+const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10, pk:0.12, ref:1, acc:1, tackleRate:1, stoppage:5 };
 
 // scope tabs
 $('#scope-tabs').addEventListener('click', e=>{
@@ -2178,7 +2210,8 @@ function loadTeamForm(){
     ['t-dribble', t.dribble], ['t-tackle', t.tackle], ['t-line', t.line],
     ['t-press', t.press], ['t-shape', t.shape], ['t-mark', t.mark],
     ['t-width', t.width], ['t-set', t.set], ['t-throw', t.throw],
-    ['t-dist', t.dist], ['t-cands', t.cands]
+    ['t-dist', t.dist], ['t-cands', t.cands],
+    ['t-run', t.run], ['t-offiq', t.offiq]
   ];
   for (const [id, v] of pairs){
     const el = $('#'+id);
@@ -2210,7 +2243,9 @@ const TEAM_FIELDS = [
   ['t-set','set', v=>v.toFixed(2)],
   ['t-throw','throw', v=>String(v)],
   ['t-dist','dist', v=>v.toFixed(2)],
-  ['t-cands','cands', v=>String(v)]
+  ['t-cands','cands', v=>String(v)],
+  ['t-run','run', v=>v.toFixed(2)],
+  ['t-offiq','offiq', v=>v.toFixed(2)]
 ];
 for (const [id, key, fmt] of TEAM_FIELDS){
   $('#'+id).addEventListener('input', e=>{
@@ -2383,7 +2418,11 @@ $('#btn-sim').addEventListener('click', ()=>{
     throwH: teamTactics[0].throw, throwA: teamTactics[1].throw,
     distH: teamTactics[0].dist, distA: teamTactics[1].dist,
     candsH: teamTactics[0].cands, candsA: teamTactics[1].cands,
-    pk: matchParams.pk, ref: matchParams.ref
+    runH: teamTactics[0].run, runA: teamTactics[1].run,
+    offiqH: teamTactics[0].offiq, offiqA: teamTactics[1].offiq,
+    pk: matchParams.pk, ref: matchParams.ref,
+    acc: matchParams.acc, tackleRate: matchParams.tackleRate,
+    stoppage: matchParams.stoppage
   };
   const homeAggro = teamTactics[0].aggro;
   const awayAggro = teamTactics[1].aggro;
@@ -2431,6 +2470,9 @@ bindRange('p-drift', v=>{ matchParams.drift=v; }, v=>v.toFixed(1));
 bindRange('p-gk', v=>{ matchParams.gk=v; }, v=>v.toFixed(2));
 bindRange('p-pk', v=>{ matchParams.pk=v; }, v=>v.toFixed(2));
 bindRange('p-ref', v=>{ matchParams.ref=v; }, v=>v.toFixed(1));
+bindRange('p-acc', v=>{ matchParams.acc=v; }, v=>v.toFixed(1));
+bindRange('p-tackle-rate', v=>{ matchParams.tackleRate=v; }, v=>v.toFixed(1));
+bindRange('p-stoppage', v=>{ matchParams.stoppage=v; }, v=>String(v));
 
 function bindRange(id, onChange, format){
   const el = $('#'+id), out = $('#'+id+'-v');
