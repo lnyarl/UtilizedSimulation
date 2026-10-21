@@ -88,7 +88,7 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 18px">
     <div>
       <div class="row">
         <label>홈 포메이션</label>
@@ -148,6 +148,38 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
         <label>주력</label>
         <input type="range" id="p-pace" min="0.6" max="1.4" step="0.05" value="1">
         <div class="val" id="p-pace-v">1.0</div>
+      </div>
+      <div class="row">
+        <label>압박 반경</label>
+        <input type="range" id="p-press" min="12" max="40" step="1" value="30">
+        <div class="val" id="p-press-v">30</div>
+      </div>
+      <div class="row">
+        <label>형태 유지</label>
+        <input type="range" id="p-shape" min="0" max="1" step="0.05" value="0.7">
+        <div class="val" id="p-shape-v">0.70</div>
+      </div>
+    </div>
+    <div>
+      <div class="row">
+        <label>마킹 간격</label>
+        <input type="range" id="p-mark" min="2" max="14" step="0.5" value="7">
+        <div class="val" id="p-mark-v">7.0</div>
+      </div>
+      <div class="row">
+        <label>채널 폭</label>
+        <input type="range" id="p-width" min="0.12" max="0.38" step="0.01" value="0.24">
+        <div class="val" id="p-width-v">0.24</div>
+      </div>
+      <div class="row">
+        <label>최소 간격</label>
+        <input type="range" id="p-space" min="0.6" max="2.8" step="0.1" value="1.5">
+        <div class="val" id="p-space-v">1.5</div>
+      </div>
+      <div class="row">
+        <label>잔동작</label>
+        <input type="range" id="p-drift" min="0" max="3" step="0.1" value="1.2">
+        <div class="val" id="p-drift-v">1.2</div>
       </div>
     </div>
   </div>
@@ -235,6 +267,13 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
       <tr><td>패스</td><td id="st-pass-h">—</td><td id="st-pass-a">—</td></tr>
       <tr><td>태클</td><td id="st-tackle-h">—</td><td id="st-tackle-a">—</td></tr>
       <tr><td>득점</td><td id="st-goal-h">—</td><td id="st-goal-a">—</td></tr>
+      <tr><td>파울</td><td id="st-foul-h">—</td><td id="st-foul-a">—</td></tr>
+      <tr><td>코너</td><td id="st-corner-h">—</td><td id="st-corner-a">—</td></tr>
+      <tr><td>스로인</td><td id="st-throw-h">—</td><td id="st-throw-a">—</td></tr>
+      <tr><td>골킥</td><td id="st-gkick-h">—</td><td id="st-gkick-a">—</td></tr>
+      <tr><td>오프사이드</td><td id="st-off-h">—</td><td id="st-off-a">—</td></tr>
+      <tr><td>페널티</td><td id="st-pen-h">—</td><td id="st-pen-a">—</td></tr>
+      <tr><td>옐로/레드</td><td id="st-card-h">—</td><td id="st-card-a">—</td></tr>
     </table>
 
     <h2 style="margin-top:14px">이벤트</h2>
@@ -264,6 +303,8 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
 <script>
 /* ENGINE - pure logic, produces the log object */
 const FIELD_W = 105, FIELD_H = 68, GOAL_W = 14.64;
+const BOX_W = 16.5, BOX_H = 40.3, SIX_W = 5.5, SIX_H = 18.32;
+const PEN_X = 11, HALF_SECONDS = 2700;
 const TICK_DT = 1.0, MATCH_SECONDS = 5400, RECORD_EVERY = 1, DECIDE_EVERY = 2;
 
 const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
@@ -372,7 +413,8 @@ function createMatch(opts){
   const homeAggro = opts.homeAggro||1, awayAggro = opts.awayAggro||1;
   const tac = Object.assign({
     shoot:1, pass:1, dribble:1, tackle:1,
-    line:0.12, gk:0.10, pace:1
+    line:0.12, gk:0.10, pace:1,
+    press:30, shape:0.7, mark:7, width:0.24, space:1.5, drift:1.2
   }, opts.tactics||{});
   const formHome = getFormation(opts.formationHome);
   const formAway = getFormation(opts.formationAway);
@@ -393,10 +435,16 @@ function createMatch(opts){
   return {
     seed, time:0, tick:0, score:[0,0], players, tactics:tac,
     formations:[formHome, formAway],
-    ball:{ x:FIELD_W/2, y:FIELD_H/2, vx:0, vy:0, owner:null, passTarget:null },
-    kickoffTeam:0,
+    ball:{ x:FIELD_W/2, y:FIELD_H/2, vx:0, vy:0, owner:null, passTarget:null, shot:false },
+    kickoffTeam:0, lastTouch:0,
+    phase:'kickoff', deadTimer:0,
+    restart:null, // {type, x, y, team, taker}
+    half:1, stoppage:0, stoppagePlayed:0,
+    carded:{}, // id -> {yellow:n, red:bool}
     events:[],
-    stats:{ possession:[0,0], shots:[0,0], passes:[0,0], tackles:[0,0], goals:[0,0] },
+    stats:{ possession:[0,0], shots:[0,0], passes:[0,0], tackles:[0,0], goals:[0,0],
+      fouls:[0,0], corners:[0,0], throwIns:[0,0], goalKicks:[0,0],
+      yellow:[0,0], red:[0,0], penalties:[0,0], offside:[0,0] },
     log:{
       meta:{
         seed, tickDt:TICK_DT, recordEvery:RECORD_EVERY,
@@ -474,12 +522,13 @@ function scoreShoot(state,p){
   const g=goalTarget(p.team);
   const dx=p.x-g.x, dy=p.y-g.y;
   const d=Math.sqrt(dx*dx+dy*dy);
-  if (d>34) return -1;
+  if (d>32) return -1;
   const angle=1-Math.abs(p.y-g.y)*0.0147059;
+  if (angle<0.28) return -1;
   const pressure=pressureOn(state,p);
   const skill=p.attrs.shooting*0.01;
   const urgency=(state.time>4300&&state.score[p.team]<=state.score[1-p.team])?0.15:0;
-  return ((1-d*0.0357143)*0.70*angle + skill*0.18 + (1-pressure*0.6666667)*0.12 + urgency) * p.w.shoot * 0.72;
+  return ((1-d*0.03125)*0.60*angle + skill*0.15 + (1-pressure*0.6666667)*0.15 + urgency) * p.w.shoot * 1.35;
 }
 
 function scorePass(state,p,mate){
@@ -507,8 +556,12 @@ function scorePass(state,p,mate){
     }
   }
   if (laneRisk>1) laneRisk=1;
-  return (open*0.40 + progress*0.25 + toGoal*0.20 + p.attrs.passing*0.001
+  let score=(open*0.40 + progress*0.25 + toGoal*0.20 + p.attrs.passing*0.001
     - laneRisk*0.35 - Math.min(1,d*0.02)*0.15) * p.w.pass;
+  // offside: strikers are only sometimes aware — leaving them caught out
+  const unaware = ((state.tick*13 + mate.id*29) % 10) < 3;
+  if (isOffsidePos(state,mate) && !unaware) score -= 0.6;
+  return score;
 }
 
 function scoreDribble(state,p){
@@ -518,7 +571,7 @@ function scoreDribble(state,p){
   const space=1-pressureOn(state,p)*0.5;
   return ((1-d*0.0142857)*0.40 + (space<0?0:space)*0.35 + p.attrs.dribbling*0.0025) * p.w.dribble;
 }
-const scoreHold = (state,p)=>(1-util.linear(pressureOn(state,p),1.2))*0.55*p.w.position;
+const scoreHold = (state,p)=>(1-util.linear(pressureOn(state,p),1.2))*0.18*p.w.position;
 
 function decideBallCarrier(state,p,rng){
   const options=[{ action:'shoot', score:scoreShoot(state,p), target:goalTarget(p.team) }];
@@ -540,7 +593,9 @@ function decideBallCarrier(state,p,rng){
     const idx=cand[c];
     if (idx<0) continue;
     const m=players[idx];
-    const s=scorePass(state,p,m);
+    let s=scorePass(state,p,m);
+    // tempted by the in-behind run — this is how offside happens
+    if (s>0 && m.runBehind) s += 0.75;
     if (s>0) options.push({ action:'pass', score:s, mate:m.id, target:null });
   }
   options.push({ action:'dribble', score:scoreDribble(state,p), target:goalTarget(p.team) });
@@ -552,7 +607,7 @@ function decideBallCarrier(state,p,rng){
     if (s>bestS){ bestS=s; best=i; }
   }
   const pick=options[best];
-  if (pick.action==='shoot'&&pick.score<0.35){
+  if (pick.action==='shoot'&&pick.score<0.12){
     for (let i=0;i<options.length;i++){
       if (options[i].action==='pass'||options[i].action==='dribble'){
         if (options[i].score>0) return options[i];
@@ -568,53 +623,104 @@ function decideOffBall(state,p,teamHasBall,rng){
   const ball=state.ball;
   const players=state.players, n=players.length;
   const px=p.x, py=p.y, team=p.team;
+  const tac=state.tactics||{};
+  const form=(state.formations&&state.formations[team])||getFormation('4-4-2');
+  const slot=form[p.id%SLOT_N];
+  const fx=team===0?slot.x:1-slot.x;
+  const lineH=tac.line!=null?tac.line:0.12;
+  const shapeHold=tac.shape!=null?tac.shape:0.7;
+  const pressR=(tac.press!=null?tac.press:30);
+  const pressR2=pressR*pressR;
+  const markR=(tac.mark!=null?tac.mark:7);
+  const markR2=markR*markR*markR*markR*0.25; // generous band for "near"
+  const widthF=tac.width!=null?tac.width:0.24;
+  const drift=tac.drift!=null?tac.drift:1.2;
 
-  if (!teamHasBall){
-    // closest teammate to ball presses
-    let closest=-1, closestD=1e18;
+  // home position: formation slot, shifted by ball (team block moves together)
+  const shift=((ball.x*0.0095238)-0.5)*(0.16+lineH*0.55);
+  let hx=(fx+shift<0.05?0.05:fx+shift>0.95?0.95:fx+shift)*FIELD_W;
+  let hy=slot.y*FIELD_H;
+
+  const bdx=ball.x-px, bdy=ball.y-py;
+  const ballD2=bdx*bdx+bdy*bdy;
+
+  if (!teamHasBall && p.role!=='GK'){
+    // designated pressers only
+    let closest=-1, closestD=1e18, second=-1, secondD=1e18;
     for (let i=0;i<n;i++){
       const m=players[i];
       if (m.team!==team||m.role==='GK') continue;
       const dx=m.x-ball.x, dy=m.y-ball.y, d2=dx*dx+dy*dy;
-      if (d2<closestD){ closestD=d2; closest=i; }
+      if (d2<closestD){ second=closest;secondD=closestD; closest=i;closestD=d2; }
+      else if (d2<secondD){ second=i;secondD=d2; }
     }
-    if (closest>=0 && players[closest].id===p.id){
+    const isPresser = (closest>=0 && players[closest].id===p.id && closestD<pressR2) ||
+                      (second>=0 && players[second].id===p.id && closestD<pressR2*0.45);
+    if (isPresser){
       const owner = ball.owner!=null ? players[ball.owner] : ball;
-      _tgt.x=owner.x; _tgt.y=owner.y;
+      _tgt.x=owner.x + (owner.x<px?1.2:-1.2);
+      _tgt.y=owner.y;
       return { action:'press', target:_tgt };
     }
-    // mark nearest opponent
-    let markD=1e18, mx=0, my=0;
+
+    // hold shape: ball-watch only as much as (1-shapeHold) allows
+    const zonePull = (1-shapeHold) * (ballD2<1600 ? 0.45 : ballD2<3600 ? 0.22 : 0.08);
+    hx += (ball.x-hx)*zonePull;
+    hy += (ball.y-hy)*zonePull*0.35;
+
+    // mark only opponents in my lane and within mark distance
+    let mx=null, my=null, markD=1e18;
     for (let i=0;i<n;i++){
       const o=players[i];
       if (o.team===team) continue;
+      if (Math.abs(o.y-hy)>16) continue;
       const dx=o.x-px, dy=o.y-py, d2=dx*dx+dy*dy;
       if (d2<markD){ markD=d2; mx=o.x; my=o.y; }
     }
-    if (markD<1e18){
+    if (mx!=null && markD<markR2){
       const gx=team===0?0:FIELD_W;
-      _tgt.x=mx+(gx-mx)*0.25; _tgt.y=my;
+      const tx=mx+(gx-mx)*(0.22+markR*0.012);
+      _tgt.x=tx; _tgt.y=my;
       return { action:'mark', target:_tgt };
     }
+    _tgt.x=hx; _tgt.y=hy;
+    return { action:'position', target:_tgt };
   }
 
-  // formation slot + ball shift
-  const form=(state.formations&&state.formations[team])||getFormation('4-4-2');
-  const slot=form[p.id%SLOT_N];
-  const fx=team===0?slot.x:1-slot.x;
-  const lineH=(state.tactics&&state.tactics.line!=null)?state.tactics.line:0.12;
-  const shift=((ball.x*0.0095238)-0.5)*(0.20+lineH); // ball.x/FIELD_W
-  let tx=(fx+shift<0.03?0.03:fx+shift>0.97?0.97:fx+shift)*FIELD_W;
-  let ty=slot.y*FIELD_H;
-  if (p.role!=='GK'&&state.ball.owner!=null&&players[state.ball.owner].team===team){
+  // possession: hold shape, nearby players support
+  if (p.role!=='GK' && teamHasBall && ballD2<1200){
     const op=openness(state,p);
-    const adv=(team===0?12:-12)*op*(0.7+lineH*2);
-    tx+=adv;
-    ty+=(rng()-0.5)*8*op;
-    if (tx<2) tx=2; else if (tx>FIELD_W-2) tx=FIELD_W-2;
-    if (ty<2) ty=2; else if (ty>FIELD_H-2) ty=FIELD_H-2;
+    const dir=team===0?1:-1;
+    const push=p.role==='FW'?14:p.role==='MF'?8:3;
+    hx += dir*push*op*(0.6+lineH*1.5)*(0.4+shapeHold*0.8);
+    if (p.role==='FW'){
+      const channel = slot.y<0.5 ? (0.5-widthF) : (0.5+widthF);
+      hy = hy*0.55 + channel*FIELD_H*0.45;
+    }
+    if (hx<2) hx=2; else if (hx>FIELD_W-2) hx=FIELD_W-2;
+    if (hy<3) hy=3; else if (hy>FIELD_H-3) hy=FIELD_H-3;
   }
-  _tgt.x=tx; _tgt.y=ty;
+
+  // offside awareness: hold the line, but strikers sometimes run in behind
+  if (teamHasBall && p.role!=='GK'){
+    const lineX = defensiveLineX(state, team);
+    const runIn = ((state.tick*17 + p.id*31) % 100) < 22 && p.role!=='DF';
+    p.runBehind = runIn ? 1 : 0;
+    if (runIn){
+      const depth = 6 + (p.id%8);
+      hx = team===0 ? lineX + depth : lineX - depth;
+      if (hx<2) hx=2; else if (hx>FIELD_W-2) hx=FIELD_W-2;
+    } else {
+      if (team===0 && hx > lineX-1.2) hx = lineX-1.2;
+      if (team===1 && hx < lineX+1.2) hx = lineX+1.2;
+    }
+  } else {
+    p.runBehind = 0;
+  }
+
+  const wob=state.tick*0.07 + p.id*1.7;
+  _tgt.x=hx + Math.sin(wob)*drift;
+  _tgt.y=hy + Math.cos(wob*1.3)*drift;
   return { action:'support', target:_tgt };
 }
 
@@ -661,7 +767,7 @@ function executeAction(state,p,decision){
     // accuracy: wide spread + chance to miss the frame entirely
     const spread=(1-skill)*16+8;
     const ty=g.y+(Math.random()-0.5)*spread*2;
-    const missChance=clamp(0.38+(d/34)*0.42-skill*0.16,0.14,0.82);
+    const missChance=clamp(0.22+(d/34)*0.30-skill*0.16,0.08,0.55);
     const speed=18+skill*8;
     const dx=g.x-p.x, dy=ty-p.y, dd=Math.hypot(dx,dy)||1;
     if (Math.random()<missChance){
@@ -673,10 +779,17 @@ function executeAction(state,p,decision){
       ball.vx=(dx/dd)*speed; ball.vy=(dy/dd)*speed;
     }
     ball.owner=null;
+    ball.shot=true;
     state.stats.shots[p.team]++;
     pushEvent(state,'shot',{ team:p.team, player:p.id, x:r2(p.x), y:r2(p.y), dist:r1(d) });
   } else if (decision.action==='pass' && decision.mate!=null && state.players[decision.mate]){
     const mate=state.players[decision.mate];
+    if (checkOffside(state,p,mate)){
+      state.stats.offside[p.team]++;
+      pushEvent(state,'offside',{ team:p.team, player:mate.id, x:r2(mate.x), y:r2(mate.y) });
+      placeRestart(state,'free_kick', mate.x, mate.y, 1-p.team);
+      return;
+    }
     const tx=mate.x+mate.vx*0.25, ty=mate.y+mate.vy*0.25;
     const speed=10+(p.attrs.passing/100)*12;
     const dx=tx-p.x, dy=ty-p.y, d=Math.hypot(dx,dy)||1;
@@ -686,14 +799,18 @@ function executeAction(state,p,decision){
     pushEvent(state,'pass',{ team:p.team, player:p.id, to:mate.id, x:r2(p.x), y:r2(p.y) });
   } else if (decision.action==='dribble'){
     const g=goalTarget(p.team);
-    moveToward(p,g.x,g.y,TICK_DT,1.15);
+    // drive to the box edge, keep a channel — do not walk into the goal mouth
+    const dir=p.team===0?1:-1;
+    const tx=Math.max(14,Math.min(FIELD_W-14, g.x - dir*14));
+    const ty=clamp(p.y*0.7 + FIELD_H/2*0.3, 14, FIELD_H-14);
+    moveToward(p,tx,ty,TICK_DT,1.12);
     ball.x=p.x+p.vx*TICK_DT*0.5; ball.y=p.y+p.vy*TICK_DT*0.5;
     ball.vx=p.vx; ball.vy=p.vy; ball.owner=p.id;
   } else if (decision.action==='hold'){
     ball.x=p.x; ball.y=p.y; ball.vx=0; ball.vy=0; ball.owner=p.id;
     moveToward(p,p.x,p.y,TICK_DT,0.3);
   } else {
-    moveToward(p,decision.target.x,decision.target.y,TICK_DT,1);
+    moveToward(p,decision.target.x,decision.target.y,TICK_DT,p.runBehind?1.7:1);
   }
 }
 
@@ -701,43 +818,52 @@ function updateBall(state,dt){
   const ball=state.ball;
   if (ball.owner!=null){
     const owner=state.players[ball.owner];
-    ball.x=owner.x+owner.vx*dt*0.5;
-    ball.y=owner.y+owner.vy*dt*0.5;
+    if (owner){
+      ball.x=owner.x+owner.vx*dt*0.5;
+      ball.y=owner.y+owner.vy*dt*0.5;
+      state.lastTouch=ball.owner;
+    }
     return;
   }
   ball.x+=ball.vx*dt; ball.y+=ball.vy*dt;
   ball.vx*=0.985; ball.vy*=0.985;
-  if (ball.y<0.3){ ball.y=0.3; ball.vy=Math.abs(ball.vy)*0.5; }
-  if (ball.y>FIELD_H-0.3){ ball.y=FIELD_H-0.3; ball.vy=-Math.abs(ball.vy)*0.5; }
 
   const goalTop=FIELD_H/2-GOAL_W/2, goalBot=FIELD_H/2+GOAL_W/2;
-  // GK save check when ball enters the goal area
-  if (ball.x<18||ball.x>FIELD_W-18){
-    const defTeam=ball.x<18?0:1;
+  // GK save when ball is shot toward goal
+  if (ball.shot && (ball.x<20||ball.x>FIELD_W-20)){
+    const defTeam=ball.x<20?0:1;
     const gk=state.players[defTeam*SLOT_N];
-    const gkBoost=(state.tactics&&state.tactics.gk)||0;
-    const saveChance=0.38+(gk.attrs.tackling/100)*0.22+gkBoost;
-    if (gk&&Math.hypot(gk.x-ball.x,gk.y-ball.y)<14+gkBoost*10&&Math.random()<saveChance){
-      ball.vx=-ball.vx*0.35; ball.vy+=(Math.random()-0.5)*8;
-      ball.x=ball.x<18?12:FIELD_W-12;
-      pushEvent(state,'save',{ team:defTeam, player:gk.id, x:r2(ball.x), y:r2(ball.y) });
-      return;
+    if (gk && !isSentOff(state,gk)){
+      const gkBoost=(state.tactics&&state.tactics.gk)||0;
+      const saveChance=0.42+(gk.attrs.tackling/100)*0.25+gkBoost;
+      const gdx=gk.x-ball.x, gdy=gk.y-ball.y;
+      if (gdx*gdx+gdy*gdy<(14+gkBoost*10)*(14+gkBoost*10)&&Math.random()<saveChance){
+        ball.vx=-ball.vx*0.35; ball.vy+=(Math.random()-0.5)*8;
+        ball.x=ball.x<20?12:FIELD_W-12;
+        ball.shot=false;
+        state.lastTouch=gk.id;
+        pushEvent(state,'save',{ team:defTeam, player:gk.id, x:r2(ball.x), y:r2(ball.y) });
+        return;
+      }
     }
   }
-  if (ball.x<=0.2&&ball.y>goalTop&&ball.y<goalBot){ scoreGoal(state,1); return; }
-  if (ball.x>=FIELD_W-0.2&&ball.y>goalTop&&ball.y<goalBot){ scoreGoal(state,0); return; }
-  if (ball.x<0.2||ball.x>FIELD_W-0.2){
-    const team=ball.x<0.2?0:1;
-    resetKickoff(state,team);
-    pushEvent(state,'out',{ team, x:r2(ball.x), y:r2(ball.y) });
+
+  // goal / out of play
+  if (ball.x<=0.4 || ball.x>=FIELD_W-0.4 || ball.y<=0.4 || ball.y>=FIELD_H-0.4){
+    handleBallOut(state);
     return;
   }
-  const speed=Math.hypot(ball.vx,ball.vy);
+
+  // pickup
+  const speed=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
   for (const p of state.players){
-    const d=dist(p,ball);
-    if (d<1.4&&speed<14){
-      if (ball.passTarget===p.id||speed<6||d<0.9){
-        ball.owner=p.id; ball.vx=ball.vy=0;
+    if (isSentOff(state,p)) continue;
+    const dx=p.x-ball.x, dy=p.y-ball.y;
+    const d2=dx*dx+dy*dy;
+    if (d2<1.96 && speed<14){
+      if (ball.passTarget===p.id||speed<6||d2<0.81){
+        ball.owner=p.id; ball.vx=ball.vy=0; ball.shot=false;
+        state.lastTouch=p.id;
         if (ball.passTarget===p.id) pushEvent(state,'receive',{ team:p.team, player:p.id });
         ball.passTarget=null;
         break;
@@ -747,55 +873,316 @@ function updateBall(state,dt){
 }
 
 function scoreGoal(state,team){
+  if (!state.ball.shot){
+    // rolled in — goal kick to defending team
+    const defending=1-team;
+    state.stats.goalKicks[defending]++;
+    placeRestart(state,'goal_kick', team===0?FIELD_W-6:6, FIELD_H/2, defending);
+    return;
+  }
   state.score[team]++; state.stats.goals[team]++;
   pushEvent(state,'goal',{ team, x:team===0?FIELD_W:0, y:r2(state.ball.y), score:[state.score[0],state.score[1]] });
-  resetKickoff(state,1-team);
+  placeRestart(state,'kickoff', FIELD_W/2, FIELD_H/2, 1-team);
+}
+
+// ── Laws of the game ────────────────────────────────────────────
+function inOwnBox(x, y, team){
+  // team defends the goal at their own end
+  const goalX = team===0 ? 0 : FIELD_W;
+  const dx = Math.abs(x-goalX);
+  const dy = Math.abs(y-FIELD_H/2);
+  return dx<BOX_W && dy<BOX_H/2;
+}
+
+function placeRestart(state, type, x, y, team){
+  state.phase='dead';
+  state.deadTimer= type==='kickoff' ? 1 : 2;
+  state.restart={ type, x, y, team };
+  const ball=state.ball;
+  ball.x=clamp(x,1,FIELD_W-1);
+  ball.y=clamp(y,1,FIELD_H-1);
+  ball.vx=ball.vy=0; ball.owner=null; ball.passTarget=null; ball.shot=false;
+  pushEvent(state, type, { team, x:r2(ball.x), y:r2(ball.y) });
 }
 
 function resetKickoff(state,team){
   const ball=state.ball;
   ball.x=FIELD_W/2; ball.y=FIELD_H/2; ball.vx=ball.vy=0;
-  ball.owner=null; ball.passTarget=null;
+  ball.owner=null; ball.passTarget=null; ball.shot=false;
   for (const p of state.players){
+    if (isSentOff(state,p)) continue;
     const slot=(state.formations&&state.formations[p.team]||getFormation('4-4-2'))[p.id%SLOT_N];
     const fx=p.team===0?slot.x:1-slot.x;
     const drift=state.kickoffTeam===p.team?-0.08:0;
     p.x=clamp(fx+drift,0.02,0.98)*FIELD_W;
     p.y=slot.y*FIELD_H; p.vx=p.vy=0;
     p.stamina=clamp(p.stamina+8,0,100);
+    p.targetX=null; p.targetY=null;
   }
   state.kickoffTeam=team;
   let best=null, bestD=Infinity;
   for (const p of state.players){
-    if (p.team!==team||p.role==='GK') continue;
-    const d=dist(p,ball);
-    if (d<bestD){ bestD=d; best=p; }
+    if (p.team!==team||p.role==='GK'||isSentOff(state,p)) continue;
+    const dx=p.x-ball.x, dy=p.y-ball.y, d2=dx*dx+dy*dy;
+    if (d2<bestD){ bestD=d2; best=p; }
   }
-  if (best){ ball.owner=best.id; best.x=ball.x-(team===0?1.5:-1.5); best.y=ball.y; }
+  if (best){
+    ball.owner=best.id;
+    best.x=ball.x-(team===0?1.5:-1.5);
+    best.y=ball.y;
+    state.lastTouch=best.id;
+  }
+  state.phase='play';
+}
+
+function executeRestart(state){
+  const r=state.restart;
+  if (!r){ state.phase='play'; return; }
+  const ball=state.ball;
+  const team=r.team;
+
+  if (r.type==='kickoff'){
+    resetKickoff(state, team);
+    state.phase='play';
+    return;
+  }
+
+  if (r.type==='penalty'){
+    // place taker on the spot, GK on the line, everyone else outside the box
+    const dir = team===0 ? 1 : -1;
+    const spotX = team===0 ? BOX_W+PEN_X-11 : FIELD_W-BOX_W-PEN_X+11;
+    // simpler: penalty spot
+    const px = team===0 ? 11 : FIELD_W-11;
+    ball.x=px; ball.y=FIELD_H/2; ball.vx=ball.vy=0; ball.shot=false;
+    let taker=null;
+    for (const p of state.players){
+      if (p.team!==team||p.role==='GK') continue;
+      if (!taker || p.attrs.shooting>taker.attrs.shooting) taker=p;
+    }
+    if (taker){
+      taker.x=px-dir*1.2; taker.y=FIELD_H/2;
+      ball.owner=taker.id;
+    }
+    const gk=state.players[team===0?SLOT_N:0];
+    if (gk){ gk.x = team===0 ? 1.5 : FIELD_W-1.5; gk.y=FIELD_H/2; }
+    for (const p of state.players){
+      if (p.role==='GK') continue;
+      if (p.team===team){ p.x=clamp(px-dir*14,2,FIELD_W-2); }
+      else { p.x=clamp(px+dir*16,2,FIELD_W-2); }
+      p.y = 12 + (p.id%10)*4.8;
+    }
+    state.phase='play';
+    return;
+  }
+
+  // throwIn / corner / goalKick / freeKick — give ball to nearest taker
+  let taker=null, bestD=1e18;
+  for (const p of state.players){
+    if (p.team!==team || p.role==='GK' && r.type!=='goalKick') continue;
+    if (p.role==='GK' && r.type==='goalKick'){ taker=p; break; }
+    const dx=p.x-ball.x, dy=p.y-ball.y, d2=dx*dx+dy*dy;
+    if (d2<bestD){ bestD=d2; taker=p; }
+  }
+  if (!taker){
+    for (const p of state.players){ if (p.team===team){ taker=p; break; } }
+  }
+  if (taker){
+    taker.x=clamp(ball.x-0.8,1,FIELD_W-1);
+    taker.y=clamp(ball.y,1,FIELD_H-1);
+    ball.owner=taker.id;
+    state.lastTouch=taker.id;
+  }
+  state.phase='play';
+}
+
+function giveCard(state, p, kind){
+  // kind: 'yellow' | 'red'
+  const c=state.carded[p.id] || (state.carded[p.id]={yellow:0, red:false});
+  const team=p.team;
+  if (kind==='red' || c.yellow>=2){
+    c.red=true;
+    state.stats.red[team]++;
+    pushEvent(state,'red_card',{ team, player:p.id, number:p.number });
+    // park them off the field
+    p.x = team===0 ? -5 : FIELD_W+5;
+    p.y = FIELD_H/2;
+  } else {
+    c.yellow++;
+    state.stats.yellow[team]++;
+    pushEvent(state,'yellow_card',{ team, player:p.id, number:p.number });
+  }
+}
+
+function isSentOff(state, p){
+  const c=state.carded[p.id];
+  return !!(c && c.red);
+}
+
+function tryFoul(state, tackler, carrier, rng){
+  // rougher tackle → foul. more likely when beaten for pace / from behind
+  const behind = tackler.team===0 ? tackler.x>carrier.x : tackler.x<carrier.x;
+  let foulChance = 0.06 + (behind?0.05:0) + (carrier.attrs.dribbling-tackler.attrs.tackling)*0.0015;
+  if (foulChance<0.02) foulChance=0.02;
+  if (foulChance>0.22) foulChance=0.22;
+  if (rng()>foulChance) return false;
+
+  const team=tackler.team; // fouling team
+  const victim=carrier;
+  const inBox=inOwnBox(victim.x, victim.y, victim.team);
+  state.stats.fouls[team]++;
+  pushEvent(state,'foul',{ team, player:tackler.id, on:victim.id, x:r2(victim.x), y:r2(victim.y), penalty:inBox });
+
+  // card?
+  const cardRoll=rng();
+  if (inBox && cardRoll<0.12) giveCard(state, tackler, 'red');
+  else if (cardRoll<0.28) giveCard(state, tackler, 'yellow');
+
+  if (inBox){
+    state.stats.penalties[victim.team]++;
+    placeRestart(state,'penalty', victim.team===0?11:FIELD_W-11, FIELD_H/2, victim.team);
+  } else {
+    placeRestart(state,'free_kick', victim.x, victim.y, victim.team);
+  }
+  return true;
+}
+
+function checkOffside(state, passer, mate){
+  const dir = passer.team===0 ? 1 : -1;
+  if ((mate.x-passer.x)*dir <= 0.5) return false; // not a forward pass
+  return isOffsidePos(state, mate);
+}
+
+function isOffsidePos(state, p){
+  const dir = p.team===0 ? 1 : -1;
+  const halfLine = FIELD_W/2;
+  const inOppHalf = p.team===0 ? p.x>halfLine-1 : p.x<halfLine+1;
+  if (!inOppHalf) return false;
+  const defTeam=1-p.team;
+  const xs=[];
+  for (const q of state.players){
+    if (q.team!==defTeam) continue;
+    xs.push(q.x);
+  }
+  xs.sort((a,b)=> p.team===0 ? b-a : a-b);
+  const line = xs.length>=2 ? xs[1] : (xs[0]!=null?xs[0]:halfLine);
+  return p.team===0 ? p.x>line : p.x<line;
+}
+
+function defensiveLineX(state, againstTeam){
+  // second-last defender of the defending team (againstTeam is attacking)
+  const defTeam=1-againstTeam;
+  const xs=[];
+  for (const q of state.players){
+    if (q.team!==defTeam) continue;
+    xs.push(q.x);
+  }
+  if (!xs.length) return againstTeam===0 ? FIELD_W-20 : 20;
+  xs.sort((a,b)=> againstTeam===0 ? b-a : a-b);
+  return xs.length>=2 ? xs[1] : xs[0];
+}
+
+function handleBallOut(state){
+  const ball=state.ball;
+  const goalTop=FIELD_H/2-GOAL_W/2, goalBot=FIELD_H/2+GOAL_W/2;
+
+  // goal line
+  if (ball.x<=0.3 || ball.x>=FIELD_W-0.3){
+    const leftSide = ball.x<=0.3;
+    const defending = leftSide ? 0 : 1; // team whose goal this is
+    const attacking = 1-defending;
+    const lastTeam = state.players[state.lastTouch] ? state.players[state.lastTouch].team : attacking;
+
+    if (ball.y>goalTop && ball.y<goalBot && state.ball.shot){
+      scoreGoal(state, attacking);
+      return true;
+    }
+    if (ball.y>goalTop && ball.y<goalBot && !state.ball.shot){
+      // ball rolled in — goal kick
+      state.stats.goalKicks[defending]++;
+      placeRestart(state,'goal_kick', leftSide?6:FIELD_W-6, FIELD_H/2, defending);
+      return true;
+    }
+    // out over goal line
+    if (lastTeam===defending){
+      state.stats.corners[attacking]++;
+      placeRestart(state,'corner', leftSide?1:FIELD_W-1, ball.y<FIELD_H/2?1:FIELD_H-1, attacking);
+    } else {
+      state.stats.goalKicks[defending]++;
+      placeRestart(state,'goal_kick', leftSide?6:FIELD_W-6, FIELD_H/2, defending);
+    }
+    return true;
+  }
+
+  // touchline
+  if (ball.y<=0.3 || ball.y>=FIELD_H-0.3){
+    const lastTeam = state.players[state.lastTouch] ? state.players[state.lastTouch].team : 0;
+    const team = 1-lastTeam;
+    state.stats.throwIns[team]++;
+    placeRestart(state,'throw_in', ball.x, ball.y<=0.3?1.5:FIELD_H-1.5, team);
+    return true;
+  }
+  return false;
 }
 
 function step(state,rng){
-  if (state.time>=MATCH_SECONDS) return false;
+  // end of match (with stoppage)
+  const halfLimit = state.half===1 ? HALF_SECONDS : MATCH_SECONDS + state.stoppage;
+  if (state.time>=halfLimit){
+    if (state.half===1){
+      // halftime: swap sides conceptually (keep attacking dirs), reset positions
+      state.half=2;
+      state.stoppage = 1 + Math.floor(rng()*5); // 1-5 min
+      pushEvent(state,'halftime',{ score:[state.score[0],state.score[1]] });
+      resetKickoff(state,1);
+      state.phase='play';
+      return true;
+    }
+    if (state.time>=MATCH_SECONDS + state.stoppage){
+      state.phase='end';
+      pushEvent(state,'fulltime',{ score:[state.score[0],state.score[1]] });
+      return false;
+    }
+  }
   state.time+=TICK_DT; state.tick++;
+
+  // dead-ball countdown (restart setup)
+  if (state.phase==='dead'){
+    if (state.deadTimer>0){
+      state.deadTimer--;
+      if (state.tick%RECORD_EVERY===0) recordFrame(state);
+      return true;
+    }
+    executeRestart(state);
+    return true;
+  }
+
   const owner=state.ball.owner;
-  if (owner!=null) state.stats.possession[state.players[owner].team]++;
+  if (owner!=null && state.players[owner] && !isSentOff(state,state.players[owner])){
+    state.stats.possession[state.players[owner].team]++;
+    state.lastTouch=owner;
+  }
 
   const players=state.players, n=players.length;
   const decideNow = (state.tick%DECIDE_EVERY===0);
 
-  // tackles (cheap squared dist)
-  if (owner!=null){
+  // tackles + fouls
+  if (owner!=null && state.players[owner] && !isSentOff(state,state.players[owner])){
     const carrier=players[owner];
     const cx=carrier.x, cy=carrier.y;
     for (let i=0;i<n;i++){
       const p=players[i];
-      if (p.id===owner) continue;
+      if (p.id===owner || isSentOff(state,p)) continue;
       const dx=p.x-cx, dy=p.y-cy;
-      if (dx*dx+dy*dy>4.84) continue; // 2.2^2
-      const chance=((p.attrs.tackling*0.01)*0.55-(carrier.attrs.dribbling*0.01)*0.35+0.15);
-      const c=chance<0.05?0.05:chance>0.7?0.7:chance;
-      if (rng()<c*0.35){
+      if (dx*dx+dy*dy>4.84) continue;
+      if (tryFoul(state,p,carrier,rng)){
+        return true; // dead ball
+      }
+      const chance=((p.attrs.tackling*0.01)*0.35-(carrier.attrs.dribbling*0.01)*0.28+0.10);
+      const c=chance<0.03?0.03:chance>0.40?0.40:chance;
+      if (rng()<c*0.18){
         state.ball.owner=p.id; state.ball.vx=state.ball.vy=0;
+        state.ball.shot=false;
+        state.lastTouch=p.id;
         state.stats.tackles[p.team]++;
         pushEvent(state,'tackle',{ team:p.team, player:p.id, from:carrier.id, x:r2(p.x), y:r2(p.y) });
       }
@@ -805,7 +1192,8 @@ function step(state,rng){
   // decisions + movement
   for (let i=0;i<n;i++){
     const p=players[i];
-    p.stamina = p.stamina + 0.375 > 100 ? 100 : p.stamina + 0.375; // ~0.15 per old 0.1s tick scaled
+    if (isSentOff(state,p)) continue;
+    p.stamina = p.stamina + 0.375 > 100 ? 100 : p.stamina + 0.375;
     const isCarrier = state.ball.owner===p.id;
     let decision;
     if (isCarrier){
@@ -813,18 +1201,48 @@ function step(state,rng){
     } else if (p.role==='GK'){
       decision=decideGK(state,p);
     } else if (decideNow || p.targetX==null){
-      const teamHasBall = state.ball.owner!=null && players[state.ball.owner].team===p.team;
+      const teamHasBall = state.ball.owner!=null && players[state.ball.owner] && players[state.ball.owner].team===p.team;
       decision=decideOffBall(state,p,teamHasBall,rng);
     } else {
       _tgt.x=p.targetX; _tgt.y=p.targetY;
       decision={ action:'support', target:_tgt };
     }
     executeAction(state,p,decision);
+    if (state.phase==='dead'){
+      if (state.tick%RECORD_EVERY===0) recordFrame(state);
+      return true;
+    }
     if (decision.target && decision.action!=='pass' && decision.action!=='shoot') {
       p.targetX=decision.target.x;
       p.targetY=decision.target.y;
     }
+    if (state.ball.owner===p.id) state.lastTouch=p.id;
   }
+
+  // separation
+  const minSep=state.tactics&&state.tactics.space!=null?state.tactics.space:1.5;
+  const minSep2=minSep*minSep;
+  for (let i=0;i<n;i++){
+    const a=players[i];
+    if (isSentOff(state,a)) continue;
+    for (let j=i+1;j<n;j++){
+      const b=players[j];
+      if (isSentOff(state,b)) continue;
+      const dx=b.x-a.x, dy=b.y-a.y;
+      const d2=dx*dx+dy*dy;
+      if (d2>=minSep2 || d2<1e-6) continue;
+      const d=Math.sqrt(d2);
+      const push=(minSep-d)*0.45;
+      const inv=push/d;
+      a.x-=dx*inv; a.y-=dy*inv;
+      b.x+=dx*inv; b.y+=dy*inv;
+      if (a.x<1)a.x=1; else if (a.x>FIELD_W-1)a.x=FIELD_W-1;
+      if (a.y<1)a.y=1; else if (a.y>FIELD_H-1)a.y=FIELD_H-1;
+      if (b.x<1)b.x=1; else if (b.x>FIELD_W-1)b.x=FIELD_W-1;
+      if (b.y<1)b.y=1; else if (b.y>FIELD_H-1)b.y=FIELD_H-1;
+    }
+  }
+
   updateBall(state,TICK_DT);
   if (state.tick%RECORD_EVERY===0) recordFrame(state);
   return true;
@@ -847,7 +1265,17 @@ function simulateMatch(opts){
     shots:[state.stats.shots[0],state.stats.shots[1]],
     passes:[state.stats.passes[0],state.stats.passes[1]],
     tackles:[state.stats.tackles[0],state.stats.tackles[1]],
-    goals:[state.stats.goals[0],state.stats.goals[1]]
+    goals:[state.stats.goals[0],state.stats.goals[1]],
+    fouls:[state.stats.fouls[0],state.stats.fouls[1]],
+    corners:[state.stats.corners[0],state.stats.corners[1]],
+    throwIns:[state.stats.throwIns[0],state.stats.throwIns[1]],
+    goalKicks:[state.stats.goalKicks[0],state.stats.goalKicks[1]],
+    yellow:[state.stats.yellow[0],state.stats.yellow[1]],
+    red:[state.stats.red[0],state.stats.red[1]],
+    penalties:[state.stats.penalties[0],state.stats.penalties[1]],
+    offside:[state.stats.offside[0],state.stats.offside[1]],
+    half: state.half,
+    stoppage: state.stoppage
   };
   state.log.duration=r1(state.time);
   return state.log;
@@ -862,12 +1290,12 @@ const $$ = s=>[...document.querySelectorAll(s)];
 
 const view = {
   log: null,
+  simTime: 0,
   frameIndex: 0,
   playing: false,
   speed: 4,
   raf: null,
-  lastTs: 0,
-  acc: 0
+  lastTs: 0
 };
 
 const canvas = $('#pitch');
@@ -878,11 +1306,10 @@ function loadLog(log){
   if (view.raf) cancelAnimationFrame(view.raf);
   view.raf = null;
   view.playing = false;
-  view.acc = 0;
+  view.simTime = 0;
   view.lastTs = 0;
 
   view.log = log;
-  view.frameIndex = 0;
   $('#btn-play').disabled = false;
   $('#btn-full').disabled = false;
   $('#btn-pause').disabled = false;
@@ -937,6 +1364,20 @@ function loadLog(log){
   $('#st-tackle-a').textContent = s.tackles[1];
   $('#st-goal-h').textContent = s.goals[0];
   $('#st-goal-a').textContent = s.goals[1];
+  $('#st-foul-h').textContent = s.fouls ? s.fouls[0] : 0;
+  $('#st-foul-a').textContent = s.fouls ? s.fouls[1] : 0;
+  $('#st-corner-h').textContent = s.corners ? s.corners[0] : 0;
+  $('#st-corner-a').textContent = s.corners ? s.corners[1] : 0;
+  $('#st-throw-h').textContent = s.throwIns ? s.throwIns[0] : 0;
+  $('#st-throw-a').textContent = s.throwIns ? s.throwIns[1] : 0;
+  $('#st-gkick-h').textContent = s.goalKicks ? s.goalKicks[0] : 0;
+  $('#st-gkick-a').textContent = s.goalKicks ? s.goalKicks[1] : 0;
+  $('#st-off-h').textContent = s.offside ? s.offside[0] : 0;
+  $('#st-off-a').textContent = s.offside ? s.offside[1] : 0;
+  $('#st-pen-h').textContent = s.penalties ? s.penalties[0] : 0;
+  $('#st-pen-a').textContent = s.penalties ? s.penalties[1] : 0;
+  $('#st-card-h').textContent = (s.yellow?s.yellow[0]:0) + ' / ' + (s.red?s.red[0]:0);
+  $('#st-card-a').textContent = (s.yellow?s.yellow[1]:0) + ' / ' + (s.red?s.red[1]:0);
 
   // events
   const box = $('#event-log');
@@ -951,6 +1392,18 @@ function loadLog(log){
     else if (e.type==='receive') text = `📩 받음 #${e.player}`;
     else if (e.type==='save') text = `🧤 세이브 #${e.player}`;
     else if (e.type==='out') text = `↗ 아웃 team=${e.team}`;
+    else if (e.type==='throw_in') text = `🤸 스로인 team=${e.team}`;
+    else if (e.type==='corner') text = `🚩 코너 team=${e.team}`;
+    else if (e.type==='goal_kick') text = `🥅 골킥 team=${e.team}`;
+    else if (e.type==='free_kick') text = `🦵 프리킥 team=${e.team}`;
+    else if (e.type==='penalty') text = `⚽ 페널티! team=${e.team}`;
+    else if (e.type==='foul') text = `❗ 파울 #${e.player}${e.penalty?' (PK)':''}`;
+    else if (e.type==='yellow_card') text = `🟨 옐로 #${e.player}`;
+    else if (e.type==='red_card') text = `🟥 레드 #${e.player}`;
+    else if (e.type==='offside') text = `🏳 오프사이드 #${e.player}`;
+    else if (e.type==='halftime') text = `⏱ 하프타임 (${e.score[0]}-${e.score[1]})`;
+    else if (e.type==='fulltime') text = `🏁 종료 (${e.score[0]}-${e.score[1]})`;
+    else if (e.type==='kickoff') text = `▶ 킥오프 team=${e.team}`;
     return `<div class="entry ${cls}" data-t="${e.t}" style="cursor:pointer"><span class="t">${mm}:${ss}</span>${text}</div>`;
   }).join('') || '<div class="entry muted">이벤트 없음</div>';
 
@@ -981,8 +1434,7 @@ function resetViewerUI(){
   if (view.raf) cancelAnimationFrame(view.raf);
   view.raf = null;
   view.playing = false;
-  view.frameIndex = 0;
-  view.acc = 0;
+  view.simTime = 0;
   view.lastTs = 0;
 
   $('#seek').value = 0;
@@ -1024,14 +1476,8 @@ function resetViewerUI(){
 
 function seekToTime(t){
   if (!view.log) return;
-  const frames = view.log.frames;
-  let idx = 0;
-  for (let i=0;i<frames.length;i++){
-    if (frames[i][0] >= t){ idx = i; break; }
-    idx = i;
-  }
-  view.frameIndex = idx;
-  $('#seek').value = idx;
+  const dur = view.log.duration || 5400;
+  view.simTime = Math.max(0, Math.min(dur, t));
   drawFrame();
 }
 
@@ -1040,24 +1486,47 @@ function fmtClock(sec){
   return String(mm).padStart(2,'0') + ':' + String(ss).padStart(2,'0');
 }
 
+function frameAtTime(t){
+  const frames = view.log.frames;
+  const n = frames.length;
+  if (n===0) return null;
+  if (t<=frames[0][0]) return { i:0, j:0, u:0 };
+  if (t>=frames[n-1][0]) return { i:n-1, j:n-1, u:0 };
+  // binary search
+  let lo=0, hi=n-1;
+  while (hi-lo>1){
+    const mid=(lo+hi)>>1;
+    if (frames[mid][0]<=t) lo=mid; else hi=mid;
+  }
+  const t0=frames[lo][0], t1=frames[hi][0];
+  const u = t1>t0 ? (t-t0)/(t1-t0) : 0;
+  return { i:lo, j:hi, u };
+}
+
 function drawFrame(){
   const log = view.log;
   if (!log || !log.frames.length){
     drawPitchIdle();
     return;
   }
-  const f = log.frames[view.frameIndex];
-  const t = f[0], bx = f[1], by = f[2], owner = f[3];
-  const n = (f.length - 4) >> 1;
+  const t = view.simTime;
+  const seg = frameAtTime(t);
+  const fa = log.frames[seg.i];
+  const fb = log.frames[seg.j];
+  const u = seg.u;
+  const n = (fa.length - 4) >> 1;
+  const owner = u<0.5 ? fa[3] : fb[3];
+  const bx = fa[1] + (fb[1]-fa[1])*u;
+  const by = fa[2] + (fb[2]-fa[2])*u;
 
   drawPitch();
   const sx = canvas.width / FIELD_W;
   const sy = canvas.height / FIELD_H;
 
-  // players (flat coords: f[4+i*2], f[5+i*2])
   for (let i=0;i<n;i++){
     const team = i < SLOT_N ? 0 : 1;
-    const x = f[4+i*2]*sx, y = f[5+i*2]*sy;
+    const x = (fa[4+i*2] + (fb[4+i*2]-fa[4+i*2])*u) * sx;
+    const y = (fa[5+i*2] + (fb[5+i*2]-fa[5+i*2])*u) * sy;
     ctx.beginPath();
     ctx.arc(x, y, (i%SLOT_N)===0?11:10, 0, Math.PI*2);
     ctx.fillStyle = team===0 ? '#3b82f6' : '#ef4444';
@@ -1074,7 +1543,6 @@ function drawFrame(){
     ctx.fillText(String(i%SLOT_N+1), x, y+3);
   }
 
-  // ball
   ctx.beginPath();
   ctx.arc(bx*sx, by*sy, 5, 0, Math.PI*2);
   ctx.fillStyle = '#fff';
@@ -1083,10 +1551,10 @@ function drawFrame(){
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // HUD
   const rs = runningScore(t);
   $('#view-score').textContent = rs[0] + ' - ' + rs[1];
-  $('#view-clock').textContent = fmtClock(t);
+  const halfLabel = t < HALF_SECONDS ? '1H' : '2H';
+  $('#view-clock').textContent = fmtClock(t) + ' ' + halfLabel;
   $('#view-time').textContent = fmtClock(t) + ' / 90:00';
   $('#view-owner').textContent = owner>=0
     ? (owner<SLOT_N?'HOME':'AWAY') + ' #' + (owner%SLOT_N+1)
@@ -1096,8 +1564,8 @@ function drawFrame(){
   const pct = dur ? (t/dur*100) : 0;
   $('#view-progress').textContent = pct.toFixed(1) + '%';
   $('#timeline-progress').style.width = pct + '%';
-  $('#seek').value = view.frameIndex;
-  $('#seek-v').textContent = view.frameIndex;
+  $('#seek').value = seg.i;
+  $('#seek-v').textContent = seg.i;
 }
 
 function drawPitch(){
@@ -1158,10 +1626,10 @@ function runningScore(t){
 
 function play(){
   if (!view.log || !view.log.frames.length) return;
-  if (view.frameIndex >= view.log.frames.length-1) view.frameIndex = 0;
+  const dur = view.log.duration || 5400;
+  if (view.simTime >= dur - 0.01) view.simTime = 0;
   view.playing = true;
-  view.lastTs = 0; // let first rAF set the baseline
-  view.acc = 0;
+  view.lastTs = 0;
   $('#view-state').textContent = '재생 중 ' + view.speed + '×';
   if (view.raf) cancelAnimationFrame(view.raf);
   view.raf = requestAnimationFrame(loop);
@@ -1177,7 +1645,6 @@ function pause(){
 function loop(ts){
   if (!view.playing || !view.log) return;
 
-  // first frame: just establish timestamp
   if (!view.lastTs){
     view.lastTs = ts;
     view.raf = requestAnimationFrame(loop);
@@ -1186,21 +1653,14 @@ function loop(ts){
 
   let dt = (ts - view.lastTs) / 1000;
   if (!isFinite(dt) || dt < 0) dt = 0;
-  dt = Math.min(dt, 0.25); // survive tab-switch / jank without skipping forever
+  dt = Math.min(dt, 0.25);
   view.lastTs = ts;
 
-  const frameDur = TICK_DT * RECORD_EVERY; // 0.2 sim-seconds per logged frame
-  view.acc += dt * view.speed;
+  const dur = view.log.duration || 5400;
+  view.simTime += dt * view.speed;
 
-  const lastIndex = view.log.frames.length - 1;
-
-  // advance as many frames as time allows (never past the end)
-  while (view.acc >= frameDur && view.frameIndex < lastIndex){
-    view.frameIndex++;
-    view.acc -= frameDur;
-  }
-
-  if (view.frameIndex >= lastIndex){
+  if (view.simTime >= dur){
+    view.simTime = dur;
     drawFrame();
     pause();
     $('#view-state').textContent = '종료 (90:00)';
@@ -1365,7 +1825,13 @@ $('#btn-sim').addEventListener('click', ()=>{
     tackle: parseFloat($('#p-tackle').value),
     line: parseFloat($('#p-line').value),
     gk: parseFloat($('#p-gk').value),
-    pace: parseFloat($('#p-pace').value)
+    pace: parseFloat($('#p-pace').value),
+    press: parseFloat($('#p-press').value),
+    shape: parseFloat($('#p-shape').value),
+    mark: parseFloat($('#p-mark').value),
+    width: parseFloat($('#p-width').value),
+    space: parseFloat($('#p-space').value),
+    drift: parseFloat($('#p-drift').value)
   };
   const formationHome = $('#formation-home').value;
   const formationAway = $('#formation-away').value;
@@ -1415,6 +1881,12 @@ bindRange('p-tackle', v=>{}, v=>v.toFixed(1));
 bindRange('p-line', v=>{}, v=>v.toFixed(2));
 bindRange('p-gk', v=>{}, v=>v.toFixed(2));
 bindRange('p-pace', v=>{}, v=>v.toFixed(1));
+bindRange('p-press', v=>{}, v=>String(v));
+bindRange('p-shape', v=>{}, v=>v.toFixed(2));
+bindRange('p-mark', v=>{}, v=>v.toFixed(1));
+bindRange('p-width', v=>{}, v=>v.toFixed(2));
+bindRange('p-space', v=>{}, v=>v.toFixed(1));
+bindRange('p-drift', v=>{}, v=>v.toFixed(1));
 
 function bindRange(id, onChange, format){
   const el = $('#'+id), out = $('#'+id+'-v');
@@ -1436,7 +1908,7 @@ $('#btn-full').addEventListener('click', ()=>{
   $$('[data-speed]').forEach(b=>{
     b.classList.toggle('active', parseFloat(b.dataset.speed) === 30);
   });
-  view.frameIndex = 0;
+  view.simTime = 0;
   play();
   $('#view-state').textContent = '90분 완주 중 30×';
 });
@@ -1446,7 +1918,8 @@ $('#btn-reset-view').addEventListener('click', ()=>{
   $('#view-state').textContent = '처음으로';
 });
 $('#seek').addEventListener('input', e=>{
-  view.frameIndex = parseInt(e.target.value,10)||0;
+  const idx = parseInt(e.target.value,10)||0;
+  if (view.log && view.log.frames[idx]) view.simTime = view.log.frames[idx][0];
   drawFrame();
 });
 $$('[data-speed]').forEach(btn=>{
