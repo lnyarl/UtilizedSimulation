@@ -66,12 +66,14 @@ table.stats td:first-child{text-align:left;color:var(--text2)}
 .scope-panel{display:none}
 .scope-panel.active{display:block}
 .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
-.cfg-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
-.cfg-card h3{font-size:11px;color:var(--text2);font-weight:600;letter-spacing:.02em;margin-bottom:2px;text-transform:uppercase}
-.cfg-card .hint{font-size:11px;color:var(--text2);opacity:.8;margin-top:6px;line-height:1.35}
-.cfg-card .row{margin-bottom:8px}
+.cfg-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;overflow:visible}
+.cfg-card h3{font-size:11px;color:var(--text2);font-weight:600;letter-spacing:.02em;margin-bottom:8px;text-transform:uppercase}
+.cfg-card .hint{font-size:11px;color:var(--text2);opacity:.8;margin-top:8px;line-height:1.35}
+.cfg-card .row{display:grid;grid-template-columns:1fr 42px;gap:6px 8px;align-items:center;margin-bottom:10px}
 .cfg-card .row:last-child{margin-bottom:0}
-.cfg-card .row label{flex:0 0 92px;font-size:11.5px}
+.cfg-card .row label{grid-column:1 / -1;font-size:11px;color:var(--text2);margin-bottom:-2px}
+.cfg-card .row input[type=range]{width:100%;min-width:0}
+.cfg-card .row .val{flex:none;width:42px;text-align:right;font-size:12px;color:var(--accent);font-variant-numeric:tabular-nums}
 .team-toggle{display:flex;gap:6px;margin-bottom:12px}
 .team-toggle .chip{min-width:96px;text-align:center}
 .team-toggle .chip.home.active{background:#3b82f6;border-color:#3b82f6;color:#fff}
@@ -143,7 +145,12 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
           <input type="range" id="p-gk" min="0" max="0.35" step="0.01" value="0.1">
           <div class="val" id="p-gk-v">0.10</div>
         </div>
-        <div class="hint">전체 GK 보너스입니다. 높일수록 슈팅 억제. 팀별 골키퍼 편차는 선수 기량에서 조정합니다.</div>
+        <div class="row">
+          <label>페널티 세이브</label>
+          <input type="range" id="p-pk" min="0" max="0.45" step="0.01" value="0.12">
+          <div class="val" id="p-pk-v">0.12</div>
+        </div>
+        <div class="hint">GK 세이브는 일반 슈팅, 페널티 세이브는 PK 전용입니다. 키커는 선수 기량(슈팅)이 높은 사람이 나갑니다.</div>
       </div>
       <div class="cfg-card">
         <h3>시드</h3>
@@ -182,7 +189,12 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
           <input type="range" id="t-set" min="0.2" max="1" step="0.05" value="0.7">
           <div class="val" id="t-set-v">0.70</div>
         </div>
-        <div class="hint">공격성은 슛·드리블 효용을 키워 적극적으로 만듭니다. 세트피스 참여는 코너/프리킥 때 박스에 들어오는 인원입니다.</div>
+        <div class="row">
+          <label>스로인 옵션</label>
+          <input type="range" id="t-throw" min="1" max="3" step="1" value="2">
+          <div class="val" id="t-throw-v">2</div>
+        </div>
+        <div class="hint">세트피스 참여 = 코너/프리킥 때 박스에 들어오는 인원.<br>스로인 옵션 = 스로인 때 받으러 나오는 동료 수.</div>
       </div>
       <div class="cfg-card">
         <h3>볼 플레이 성향</h3>
@@ -205,6 +217,16 @@ details .body{margin-top:8px;color:var(--text2);font-size:12px}
           <label>수비 집중</label>
           <input type="range" id="t-tackle" min="0.3" max="2" step="0.05" value="1">
           <div class="val" id="t-tackle-v">1.0</div>
+        </div>
+        <div class="row">
+          <label>거리 패널티</label>
+          <input type="range" id="t-dist" min="0" max="0.35" step="0.01" value="0.15">
+          <div class="val" id="t-dist-v">0.15</div>
+        </div>
+        <div class="row">
+          <label>패스 후보</label>
+          <input type="range" id="t-cands" min="3" max="10" step="1" value="5">
+          <div class="val" id="t-cands-v">5</div>
         </div>
       </div>
       <div class="cfg-card">
@@ -476,7 +498,8 @@ function createMatch(opts){
     shootH:1, shootA:1, passH:1, passA:1, dribbleH:1, dribbleA:1, tackleH:1, tackleA:1,
     lineH:0.12, lineA:0.12, gk:0.10, pace:1,
     pressH:30, pressA:30, shapeH:0.7, shapeA:0.7,
-    markH:7, markA:7, widthH:0.24, widthA:0.24, setH:0.7, setA:0.7, space:1.5, drift:1.2
+    markH:7, markA:7, widthH:0.24, widthA:0.24, setH:0.7, setA:0.7,
+    throwH:2, throwA:2, pk:0.12, space:1.5, drift:1.2
   }, opts.tactics||{});
   // legacy single-value fallbacks
   if (opts.tactics){
@@ -942,6 +965,8 @@ function updateBall(state,dt){
   // sub-step the free ball so passes can be received mid-flight
   const steps=8;
   const sdt=dt/steps;
+  const gkBoost=(state.tactics&&state.tactics.gk)||0;
+  const pkBoost=(state.tactics&&state.tactics.pk)!=null?state.tactics.pk:0.12;
   for (let s=0;s<steps;s++){
     ball.x+=ball.vx*sdt; ball.y+=ball.vy*sdt;
     ball.vx*=0.995; ball.vy*=0.995;
@@ -951,16 +976,23 @@ function updateBall(state,dt){
       const defTeam=ball.x<20?0:1;
       const gk=state.players[defTeam*SLOT_N];
       if (gk && !isSentOff(state,gk)){
-        const gkBoost=(state.tactics&&state.tactics.gk)||0;
-        const saveChance=0.42+(gk.attrs.tackling/100)*0.25+gkBoost;
         const gdx=gk.x-ball.x, gdy=gk.y-ball.y;
-        if (gdx*gdx+gdy*gdy<(14+gkBoost*10)*(14+gkBoost*10)&&Math.random()<saveChance){
-          ball.vx=-ball.vx*0.35; ball.vy+=(Math.random()-0.5)*8;
-          ball.x=ball.x<20?12:FIELD_W-12;
-          ball.shot=false;
-          state.lastTouch=gk.id;
-          pushEvent(state,'save',{ team:defTeam, player:gk.id, x:r2(ball.x), y:r2(ball.y) });
-          return;
+        const near = gdx*gdx+gdy*gdy<(14+gkBoost*10)*(14+gkBoost*10);
+        if (near){
+          const fromSpot = Math.abs(ball.x-FIELD_W/2)>40 ? false :
+            (Math.abs(ball.x-(ball.x<FIELD_W/2?11:FIELD_W-11))<8);
+          // penalty kicks use the dedicated PK save rate
+          const saveChance = fromSpot
+            ? 0.30 + (gk.attrs.tackling/100)*0.25 + pkBoost
+            : 0.42 + (gk.attrs.tackling/100)*0.25 + gkBoost;
+          if (Math.random()<saveChance){
+            ball.vx=-ball.vx*0.35; ball.vy+=(Math.random()-0.5)*8;
+            ball.x=ball.x<20?12:FIELD_W-12;
+            ball.shot=false;
+            state.lastTouch=gk.id;
+            pushEvent(state,'save',{ team:defTeam, player:gk.id, penalty:fromSpot, x:r2(ball.x), y:r2(ball.y) });
+            return;
+          }
         }
       }
     }
@@ -1135,28 +1167,48 @@ function executeRestart(state){
   }
 
   if (r.type==='penalty'){
-    // place taker on the spot, GK on the line, everyone else outside the box
+    // spot: 11m from the goal line, centre of the goal
     const dir = team===0 ? 1 : -1;
-    const spotX = team===0 ? BOX_W+PEN_X-11 : FIELD_W-BOX_W-PEN_X+11;
-    // simpler: penalty spot
     const px = team===0 ? 11 : FIELD_W-11;
-    ball.x=px; ball.y=FIELD_H/2; ball.vx=ball.vy=0; ball.shot=false;
+    const py = FIELD_H/2;
+    ball.x=px; ball.y=py; ball.vx=ball.vy=0; ball.shot=false;
+
+    // best shooter takes it
     let taker=null;
     for (const p of state.players){
-      if (p.team!==team||p.role==='GK') continue;
+      if (p.team!==team||p.role==='GK'||isSentOff(state,p)) continue;
       if (!taker || p.attrs.shooting>taker.attrs.shooting) taker=p;
     }
-    if (taker){
-      taker.x=px-dir*1.2; taker.y=FIELD_H/2;
-      ball.owner=taker.id;
-    }
-    const gk=state.players[team===0?SLOT_N:0];
-    if (gk){ gk.x = team===0 ? 1.5 : FIELD_W-1.5; gk.y=FIELD_H/2; }
+
+    // everyone else outside the D (11m from spot), GK on the line
+    const outR = 12.5;
     for (const p of state.players){
-      if (p.role==='GK') continue;
-      if (p.team===team){ p.x=clamp(px-dir*14,2,FIELD_W-2); }
-      else { p.x=clamp(px+dir*16,2,FIELD_W-2); }
-      p.y = 12 + (p.id%10)*4.8;
+      if (isSentOff(state,p)) continue;
+      const gk = p.role==='GK';
+      if (gk){
+        // defending GK on the line; attacking GK waits far away
+        if (p.team===team){
+          p.x = team===0 ? 4 : FIELD_W-4;
+          p.y = py;
+        } else {
+          p.x = team===0 ? 1.5 : FIELD_W-1.5;
+          p.y = py;
+        }
+      } else if (taker && p.id===taker.id){
+        p.x = px - dir*1.1;
+        p.y = py;
+      } else {
+        // outside the D, on the field side of the spot
+        const outR = 12.5 + (p.team===team ? 3.5 : 0);
+        p.x = clamp(px + dir*outR, 2, FIELD_W-2);
+        p.y = clamp(py + ((p.id%10)-4.5)*3.4, 4, FIELD_H-4);
+      }
+      p.vx=p.vy=0;
+      p.targetX=p.x; p.targetY=p.y;
+    }
+    if (taker){
+      ball.owner=taker.id;
+      state.lastTouch=taker.id;
     }
     state.phase='play';
     return;
@@ -1289,6 +1341,8 @@ function executeRestart(state){
 
   if (r.type==='throw_in'){
     // a couple of teammates come short to offer the throw
+    const tac = state.tactics||{};
+    const optN = Math.max(1, Math.round(team===0 ? (tac.throwH!=null?tac.throwH:2) : (tac.throwA!=null?tac.throwA:2)));
     const mates=[];
     for (const p of state.players){
       if (p.team!==team||isSentOff(state,p)||p.role==='GK') continue;
@@ -1300,9 +1354,9 @@ function executeRestart(state){
       const db=(b.x-ball.x)**2+(b.y-ball.y)**2;
       return da-db;
     });
-    mates.slice(0,2).forEach((p,i)=>{
+    mates.slice(0,optN).forEach((p,i)=>{
       p.x=clamp(ball.x + (team===0? 3:-3), 2, FIELD_W-2);
-      p.y=clamp(ball.y + (i? 6:-6), 4, FIELD_H-4);
+      p.y=clamp(ball.y + (i%2? 7:-7) * (1+i*0.15), 4, FIELD_H-4);
       p.targetX=p.x; p.targetY=p.y;
     });
     // nearest opponent presses the throw
@@ -1350,9 +1404,18 @@ function giveCard(state, p, kind){
     c.red=true;
     state.stats.red[team]++;
     pushEvent(state,'red_card',{ team, player:p.id, number:p.number });
+    // if they had the ball, it must not leave the field with them
+    if (state.ball.owner===p.id){
+      state.ball.owner=null;
+      state.ball.passTarget=null;
+      state.ball.shot=false;
+      state.ball.vx=state.ball.vy=0;
+      placeRestart(state,'free_kick', clamp(p.x,2,FIELD_W-2), clamp(p.y,2,FIELD_H-2), 1-team);
+    }
     // park them off the field
     p.x = team===0 ? -5 : FIELD_W+5;
     p.y = FIELD_H/2;
+    p.targetX=null; p.targetY=null;
   } else {
     c.yellow++;
     state.stats.yellow[team]++;
@@ -1368,9 +1431,9 @@ function isSentOff(state, p){
 function tryFoul(state, tackler, carrier, rng){
   // rougher tackle → foul. more likely when beaten for pace / from behind
   const behind = tackler.team===0 ? tackler.x>carrier.x : tackler.x<carrier.x;
-  let foulChance = 0.06 + (behind?0.05:0) + (carrier.attrs.dribbling-tackler.attrs.tackling)*0.0015;
-  if (foulChance<0.02) foulChance=0.02;
-  if (foulChance>0.22) foulChance=0.22;
+  let foulChance = 0.015 + (behind?0.012:0) + Math.max(0, carrier.attrs.dribbling-tackler.attrs.tackling)*0.0004;
+  if (foulChance<0.005) foulChance=0.005;
+  if (foulChance>0.08) foulChance=0.08;
   if (rng()>foulChance) return false;
 
   const team=tackler.team; // fouling team
@@ -1381,8 +1444,8 @@ function tryFoul(state, tackler, carrier, rng){
 
   // card?
   const cardRoll=rng();
-  if (inBox && cardRoll<0.12) giveCard(state, tackler, 'red');
-  else if (cardRoll<0.28) giveCard(state, tackler, 'yellow');
+  if (inBox && cardRoll<0.04) giveCard(state, tackler, 'red');
+  else if (cardRoll<0.12) giveCard(state, tackler, 'yellow');
 
   if (inBox){
     state.stats.penalties[victim.team]++;
@@ -1508,21 +1571,28 @@ function step(state,rng){
   }
 
   const owner=state.ball.owner;
-  if (owner!=null && state.players[owner] && !isSentOff(state,state.players[owner])){
-    state.stats.possession[state.players[owner].team]++;
-    state.lastTouch=owner;
+  // safety: a sent-off player can never keep the ball
+  if (owner!=null && (!state.players[owner] || isSentOff(state,state.players[owner]))){
+    state.ball.owner=null;
+    state.ball.passTarget=null;
+    state.ball.shot=false;
+  }
+  const liveOwner = state.ball.owner;
+  if (liveOwner!=null && state.players[liveOwner] && !isSentOff(state,state.players[liveOwner])){
+    state.stats.possession[state.players[liveOwner].team]++;
+    state.lastTouch=liveOwner;
   }
 
   const players=state.players, n=players.length;
   const decideNow = (state.tick%DECIDE_EVERY===0);
 
   // tackles + fouls
-  if (owner!=null && state.players[owner] && !isSentOff(state,state.players[owner])){
-    const carrier=players[owner];
+  if (liveOwner!=null && state.players[liveOwner] && !isSentOff(state,state.players[liveOwner])){
+    const carrier=players[liveOwner];
     const cx=carrier.x, cy=carrier.y;
     for (let i=0;i<n;i++){
       const p=players[i];
-      if (p.id===owner || isSentOff(state,p)) continue;
+      if (p.id===liveOwner || isSentOff(state,p)) continue;
       const dx=p.x-cx, dy=p.y-cy;
       if (dx*dx+dy*dy>4.84) continue;
       if (tryFoul(state,p,carrier,rng)){
@@ -1886,27 +1956,27 @@ function drawFrame(){
     const isOwner = owner===i;
 
     if (isOwner){
-      // glow ring — unmistakable ball carrier
+      // soft highlight — enough to find the carrier, not a flare
       ctx.beginPath();
-      ctx.arc(x, y, 17, 0, Math.PI*2);
-      ctx.fillStyle = 'rgba(255,214,10,0.28)';
+      ctx.arc(x, y, 13, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,214,10,0.12)';
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(x, y, 15, 0, Math.PI*2);
-      ctx.strokeStyle = '#ffd60a';
-      ctx.lineWidth = 3;
+      ctx.arc(x, y, 12.5, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,214,10,0.55)';
+      ctx.lineWidth = 1.6;
       ctx.stroke();
     }
 
     ctx.beginPath();
-    ctx.arc(x, y, isOwner?12:10, 0, Math.PI*2);
+    ctx.arc(x, y, isOwner?10.5:10, 0, Math.PI*2);
     ctx.fillStyle = team===0 ? '#3b82f6' : '#ef4444';
     if (isOwner){
-      ctx.fillStyle = team===0 ? '#60a5fa' : '#f87171';
+      ctx.fillStyle = team===0 ? '#5b9dff' : '#f07070';
     }
     ctx.fill();
-    ctx.strokeStyle = isOwner ? '#ffd60a' : '#fff';
-    ctx.lineWidth = isOwner ? 2.5 : 1.5;
+    ctx.strokeStyle = isOwner ? 'rgba(255,214,10,0.7)' : '#fff';
+    ctx.lineWidth = isOwner ? 1.6 : 1.5;
     ctx.stroke();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 9px sans-serif';
@@ -1919,39 +1989,16 @@ function drawFrame(){
   if (owner>=0 && owner<n){
     ballX = (fa[4+owner*2] + (fb[4+owner*2]-fa[4+owner*2])*u);
     ballY = (fa[5+owner*2] + (fb[5+owner*2]-fa[5+owner*2])*u);
-    // drop it at the feet (toward the bottom of the player)
-    ballY += 0.9;
-    // short link line from player to ball
-    const px = ballX*sx, py = (ballY-0.9)*sy;
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.lineTo(ballX*sx, ballY*sy);
-    ctx.strokeStyle = 'rgba(255,214,10,0.55)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ballY += 0.85;
   }
 
   ctx.beginPath();
-  ctx.arc(ballX*sx, ballY*sy, owner>=0?6:5.5, 0, Math.PI*2);
+  ctx.arc(ballX*sx, ballY*sy, 5.2, 0, Math.PI*2);
   ctx.fillStyle = '#fff';
   ctx.fill();
-  ctx.strokeStyle = owner>=0 ? '#ffd60a' : '#222';
-  ctx.lineWidth = owner>=0 ? 2.5 : 1;
+  ctx.strokeStyle = owner>=0 ? 'rgba(255,214,10,0.65)' : '#222';
+  ctx.lineWidth = 1.2;
   ctx.stroke();
-
-  // small BALL badge over the owner
-  if (owner>=0 && owner<n){
-    const ox = (fa[4+owner*2] + (fb[4+owner*2]-fa[4+owner*2])*u) * sx;
-    const oy = (fa[5+owner*2] + (fb[5+owner*2]-fa[5+owner*2])*u) * sy;
-    ctx.fillStyle = '#ffd60a';
-    ctx.beginPath();
-    ctx.arc(ox, oy-20, 7, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 8px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('●', ox, oy-17);
-  }
 
   const rs = runningScore(t);
   $('#view-score').textContent = rs[0] + ' - ' + rs[1];
@@ -2082,14 +2129,16 @@ const ATTR_LABEL = { pace:'주력', passing:'패스', shooting:'슈팅', tacklin
 const teamTactics = [
   { // HOME
     formation:'4-4-2', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
-    line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7
+    line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7, throw:2,
+    dist:0.15, cands:5
   },
   { // AWAY
     formation:'4-3-3', aggro:1, shoot:1, pass:1, dribble:1, tackle:1,
-    line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7
+    line:0.12, press:30, shape:0.7, mark:7, width:0.24, set:0.7, throw:2,
+    dist:0.15, cands:5
   }
 ];
-const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10 };
+const matchParams = { pace:1, space:1.5, drift:1.2, gk:0.10, pk:0.12 };
 
 // scope tabs
 $('#scope-tabs').addEventListener('click', e=>{
@@ -2110,7 +2159,8 @@ function loadTeamForm(){
     ['t-aggro', t.aggro], ['t-shoot', t.shoot], ['t-pass', t.pass],
     ['t-dribble', t.dribble], ['t-tackle', t.tackle], ['t-line', t.line],
     ['t-press', t.press], ['t-shape', t.shape], ['t-mark', t.mark],
-    ['t-width', t.width], ['t-set', t.set]
+    ['t-width', t.width], ['t-set', t.set], ['t-throw', t.throw],
+    ['t-dist', t.dist], ['t-cands', t.cands]
   ];
   for (const [id, v] of pairs){
     const el = $('#'+id);
@@ -2139,7 +2189,10 @@ const TEAM_FIELDS = [
   ['t-shape','shape', v=>v.toFixed(2)],
   ['t-mark','mark', v=>v.toFixed(1)],
   ['t-width','width', v=>v.toFixed(2)],
-  ['t-set','set', v=>v.toFixed(2)]
+  ['t-set','set', v=>v.toFixed(2)],
+  ['t-throw','throw', v=>String(v)],
+  ['t-dist','dist', v=>v.toFixed(2)],
+  ['t-cands','cands', v=>String(v)]
 ];
 for (const [id, key, fmt] of TEAM_FIELDS){
   $('#'+id).addEventListener('input', e=>{
@@ -2308,7 +2361,11 @@ $('#btn-sim').addEventListener('click', ()=>{
     shapeH: teamTactics[0].shape, shapeA: teamTactics[1].shape,
     markH: teamTactics[0].mark,   markA: teamTactics[1].mark,
     widthH: teamTactics[0].width, widthA: teamTactics[1].width,
-    setH: teamTactics[0].set, setA: teamTactics[1].set
+    setH: teamTactics[0].set, setA: teamTactics[1].set,
+    throwH: teamTactics[0].throw, throwA: teamTactics[1].throw,
+    distH: teamTactics[0].dist, distA: teamTactics[1].dist,
+    candsH: teamTactics[0].cands, candsA: teamTactics[1].cands,
+    pk: matchParams.pk
   };
   const homeAggro = teamTactics[0].aggro;
   const awayAggro = teamTactics[1].aggro;
@@ -2354,6 +2411,7 @@ bindRange('p-pace', v=>{ matchParams.pace=v; }, v=>v.toFixed(1));
 bindRange('p-space', v=>{ matchParams.space=v; }, v=>v.toFixed(1));
 bindRange('p-drift', v=>{ matchParams.drift=v; }, v=>v.toFixed(1));
 bindRange('p-gk', v=>{ matchParams.gk=v; }, v=>v.toFixed(2));
+bindRange('p-pk', v=>{ matchParams.pk=v; }, v=>v.toFixed(2));
 
 function bindRange(id, onChange, format){
   const el = $('#'+id), out = $('#'+id+'-v');
